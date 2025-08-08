@@ -334,7 +334,7 @@ class AIVideoDetectiveApp:
         
         @self.app.route('/api/chat', methods=['POST'])
         def chat_endpoint():
-            """Chat API endpoint"""
+            """Chat with AI about video"""
             try:
                 data = request.get_json()
                 session_id = data.get('session_id')
@@ -355,6 +355,41 @@ class AIVideoDetectiveApp:
             except Exception as e:
                 logger.error(f"Error in chat endpoint: {e}")
                 return jsonify({'error': f'Chat error: {str(e)}'}), 500
+
+        @self.app.route('/api/process_video', methods=['POST'])
+        def process_video():
+            """Process video file (for remote server)"""
+            try:
+                if 'video' not in request.files:
+                    return jsonify({'error': 'No video file provided'}), 400
+                
+                video_file = request.files['video']
+                video_id = request.form.get('video_id')
+                
+                if video_file.filename == '':
+                    return jsonify({'error': 'No file selected'}), 400
+                
+                if not video_id:
+                    return jsonify({'error': 'No video_id provided'}), 400
+                
+                # Save file
+                filename = f"{video_id}_{video_file.filename}"
+                filepath = os.path.join(config.storage.local_upload_dir, filename)
+                video_file.save(filepath)
+                
+                # Process video
+                result = self._process_video_remote(video_id, filepath)
+                
+                return jsonify({
+                    'video_id': video_id,
+                    'filename': filename,
+                    'status': 'processing',
+                    'result': result
+                })
+                
+            except Exception as e:
+                logger.error(f"Error processing video: {e}")
+                return jsonify({'error': f'Processing error: {str(e)}'}), 500
     
     def _process_video_remote(self, video_id: str, filepath: str):
         """Process video on remote server"""

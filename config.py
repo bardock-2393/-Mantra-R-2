@@ -149,7 +149,15 @@ class SecurityConfig:
         if self.allowed_ips is None:
             self.allowed_ips = ["127.0.0.1", "localhost", "0.0.0.0"]
         if self.cors_origins is None:
-            self.cors_origins = ["*"]
+            self.cors_origins = [
+                "*",
+                "http://localhost:8888",
+                "http://localhost:8080", 
+                "http://localhost:8000",
+                "http://127.0.0.1:8888",
+                "http://127.0.0.1:8080",
+                "http://127.0.0.1:8000"
+            ]
 
 class Config:
     """Main configuration class"""

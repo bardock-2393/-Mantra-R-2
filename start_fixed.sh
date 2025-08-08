@@ -1,46 +1,61 @@
 #!/bin/bash
 
-echo "🚀 AI Video Detective - Fixed Startup Script"
-echo "============================================="
+# AI Video Detective - Fixed Startup Script
+# This script fixes Ray cluster issues and starts the application properly
 
-# Stop any existing Ray cluster
-echo "🔧 Stopping any existing Ray cluster..."
-ray stop --force || true
+set -e
 
-# Kill any remaining Ray processes
-echo "🧹 Cleaning up Ray processes..."
-pkill -9 -f ray || true
-pkill -9 -f raylet || true
-pkill -9 -f plasma || true
+echo "=== AI Video Detective - Fixed Startup ==="
 
-# Wait for cleanup
-echo "⏳ Waiting for cleanup..."
-sleep 5
-
-# Check and fix GPU configuration
-echo "🔍 Checking GPU configuration..."
-python fix_gpu_devices.py
-
-# Start fresh Ray cluster
-echo "🚀 Starting fresh Ray cluster..."
-ray start --head --port=10001 --dashboard-host=0.0.0.0 --dashboard-port=8265
-
-# Wait for Ray to be ready
-echo "⏳ Waiting for Ray cluster to be ready..."
-sleep 10
-
-# Check if Ray is running
-echo "🔍 Checking Ray cluster status..."
-if ray status > /dev/null 2>&1; then
-    echo "✅ Ray cluster is running"
-else
-    echo "❌ Ray cluster failed to start"
+# Check if we're in the right directory
+if [ ! -f "app.py" ]; then
+    echo "Error: app.py not found. Please run this script from the ai_video_detective2 directory."
     exit 1
 fi
 
-# Set environment variables
-export RAY_ADDRESS=localhost:10001
+# Set environment variables for better resource management
+export RAY_NUM_CPUS=4
+export RAY_NUM_GPUS=1
+export RAY_OBJECT_STORE_MEMORY=500000000
+export ENV=development
+export DEBUG=true
+export IS_REMOTE_SERVER=false
+export REMOTE_GPU_SERVER_URL=http://localhost:8001
+
+echo "Environment variables set:"
+echo "  RAY_NUM_CPUS=$RAY_NUM_CPUS"
+echo "  RAY_NUM_GPUS=$RAY_NUM_GPUS"
+echo "  RAY_OBJECT_STORE_MEMORY=$RAY_OBJECT_STORE_MEMORY"
+echo "  IS_REMOTE_SERVER=$IS_REMOTE_SERVER"
+
+# Check if Python virtual environment exists
+if [ ! -d "venv" ]; then
+    echo "Creating virtual environment..."
+    python3 -m venv venv
+fi
+
+# Activate virtual environment
+echo "Activating virtual environment..."
+source venv/bin/activate
+
+# Install/upgrade required packages
+echo "Installing/upgrading packages..."
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Fix Ray cluster issues
+echo "Fixing Ray cluster issues..."
+python fix_ray_resources.py
+
+# Create necessary directories
+echo "Creating necessary directories..."
+mkdir -p static/uploads
+mkdir -p temp
+mkdir -p data
 
 # Start the application
-echo "🎯 Starting AI Video Detective application..."
-python main.py 
+echo "Starting AI Video Detective..."
+echo "Access the application at: http://localhost:8888"
+echo "Press Ctrl+C to stop"
+
+python app.py 
