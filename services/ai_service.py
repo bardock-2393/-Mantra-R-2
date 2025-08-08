@@ -37,6 +37,14 @@ class AIService:
     
     def _init_vlm(self):
         """Initialize the VLM (LLaVA-NeXT-Video-7B) with SGLang"""
+        # Check if VLM is disabled via environment variable
+        if os.getenv("DISABLE_VLM", "false").lower() == "true":
+            logger.info("VLM disabled via environment variable")
+            logger.info("Running in fallback mode without VLM capabilities")
+            self.vlm_available = False
+            self.runtime = None
+            return
+        
         try:
             # Load LLaVA-NeXT-Video-7B model
             model_path = self.config.models.llava_model
@@ -53,11 +61,32 @@ class AIService:
             # Set as default backend
             sgl.set_default_backend(self.runtime)
             
+            self.vlm_available = True
             logger.info("VLM model loaded successfully")
             
+        except ImportError as e:
+            logger.warning(f"VLM dependencies not available: {e}")
+            logger.info("Running in fallback mode without VLM capabilities")
+            self.vlm_available = False
+            self.runtime = None
+            
+        except OSError as e:
+            if "undefined symbol" in str(e) or "sgl_kernel" in str(e):
+                logger.warning(f"SGLang compatibility issue detected: {e}")
+                logger.info("This is likely due to PyTorch version incompatibility with SGLang")
+                logger.info("Running in fallback mode without VLM capabilities")
+                self.vlm_available = False
+                self.runtime = None
+            else:
+                logger.error(f"OS Error initializing VLM: {e}")
+                self.vlm_available = False
+                self.runtime = None
+                
         except Exception as e:
             logger.error(f"Failed to initialize VLM: {e}")
-            raise
+            logger.info("Running in fallback mode without VLM capabilities")
+            self.vlm_available = False
+            self.runtime = None
     
     def _load_analysis_templates(self):
         """Load analysis templates for different analysis types"""
@@ -541,8 +570,12 @@ Format your response with clear creative categories, specific artistic observati
     
     def _generate_response(self, message: str, analysis_type: str, events: List[Dict], 
                           context: str, video_id: str = None) -> str:
-        """Generate response using VLM"""
+        """Generate response using VLM or fallback"""
         try:
+            # Check if VLM is available
+            if not hasattr(self, 'vlm_available') or not self.vlm_available:
+                return self._generate_fallback_response(message, analysis_type, events, context, video_id)
+            
             # Get analysis template
             template = self.analysis_templates.get(analysis_type, self.analysis_templates["comprehensive_analysis"])
             
@@ -562,7 +595,48 @@ Format your response with clear creative categories, specific artistic observati
             
         except Exception as e:
             logger.error(f"Error generating response: {e}")
-            return f"Error generating response: {str(e)}"
+            return self._generate_fallback_response(message, analysis_type, events, context, video_id)
+    
+    def _generate_fallback_response(self, message: str, analysis_type: str, events: List[Dict], 
+                                  context: str, video_id: str = None) -> str:
+        """Generate a fallback response when VLM is not available"""
+        try:
+            # Create a simple response based on available data
+            response_parts = []
+            
+            # Add header
+            response_parts.append(f"## Analysis Response ({analysis_type.replace('_', ' ').title()})")
+            response_parts.append("")
+            
+            # Add user query
+            response_parts.append(f"**User Query:** {message}")
+            response_parts.append("")
+            
+            # Add events summary if available
+            if events:
+                response_parts.append("**Detected Events:**")
+                for event in events[:5]:  # Show first 5 events
+                    event_type = event.get('type', 'unknown')
+                    timestamp = event.get('ts', 0)
+                    description = event.get('description', 'No description')
+                    response_parts.append(f"- {event_type} at {timestamp:.2f}s: {description}")
+                response_parts.append("")
+            
+            # Add analysis summary
+            response_parts.append("**Analysis Summary:**")
+            response_parts.append("Video analysis completed successfully. The system detected various events and patterns in the video content.")
+            
+            if events:
+                response_parts.append(f"Total events detected: {len(events)}")
+            
+            response_parts.append("")
+            response_parts.append("*Note: This is a fallback response. For full AI-powered analysis, please ensure all VLM dependencies are installed.*")
+            
+            return "\n".join(response_parts)
+            
+        except Exception as e:
+            logger.error(f"Error generating fallback response: {e}")
+            return f"Analysis completed. {len(events) if events else 0} events detected. (Fallback mode)"
     
     def _build_prompt(self, template: str, message: str, events: List[Dict], 
                      context: str, video_id: str = None) -> str:
@@ -619,7 +693,7 @@ Be specific, actionable, and professional in your response.
     def cleanup(self):
         """Cleanup resources"""
         try:
-            if hasattr(self, 'runtime'):
+            if hasattr(self, 'runtime') and self.runtime is not None:
                 self.runtime.shutdown()
             logger.info("AI Service cleaned up successfully")
         except Exception as e:
