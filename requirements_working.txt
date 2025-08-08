@@ -1,5 +1,5 @@
-# AI Video Detective - Minimal Requirements (No Version Constraints)
-# This file contains dependencies without version constraints for maximum compatibility
+# AI Video Detective - Working Requirements (Python 3.12 Compatible)
+# This file contains only packages that exist and work with Python 3.12
 
 # Core Flask and Web Framework
 Flask
@@ -44,8 +44,8 @@ ray
 
 # VLM and Language Models (only existing packages)
 llava-torch
-# sglang  # Removed - has Python version constraints
 # llava-hf  # Removed - package doesn't exist
+# sglang  # Removed - has Python version constraints
 
 # Utilities
 requests

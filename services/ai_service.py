@@ -11,7 +11,7 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import sglang
 from sglang import Runtime
-from sglang import LlavaCpp
+from sglang.srt.models import LlavaCpp
 import redis
 from datetime import datetime
 

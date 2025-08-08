@@ -42,7 +42,7 @@ numpy==1.26.4
 pyarrow==15.0.0
 
 # Distributed Computing
-ray==2.9.3
+ray>=2.31.0  # Use newer version compatible with Python 3.12
 
 # VLM and Language Models
 sglang==0.1.0
