@@ -129,8 +129,14 @@ print_success "Virtual environment created"
 
 # Step 7: Install PyTorch with CUDA
 print_status "Step 7/10: Installing PyTorch with CUDA support..."
-pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
-print_success "PyTorch with CUDA installed"
+# new env (don’t use base)
+conda create -n torch251-cu121 python=3.12 -y
+conda activate torch251-cu121
+pip install --upgrade pip
+# install the matched trio
+pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 \
+  --index-url https://download.pytorch.org/whl/cu121
+
 
 # Step 8: Install Python Dependencies (excluding PyTorch)
 print_status "Step 8/10: Installing Python dependencies..."
