@@ -85,7 +85,7 @@ class AIVideoDetectiveApp:
             cors_allowed_origins=config.security.cors_origins,
             ping_timeout=config.network.websocket_ping_timeout,
             ping_interval=config.network.websocket_ping_interval,
-            async_mode='gevent'
+            async_mode='threading'  # Use threading instead of gevent for better compatibility
         )
         
         # Setup SocketIO events
