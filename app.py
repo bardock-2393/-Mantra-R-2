@@ -255,7 +255,7 @@ class AIVideoDetectiveApp:
                     # Remote server: process directly
                     result = self._process_video_remote(video_id, filepath)
                 else:
-                    # Local server: forward to remote
+                    # Local server: process locally instead of forwarding
                     result = self._process_video_local(video_id, filepath)
                 
                 return jsonify({
@@ -408,24 +408,22 @@ class AIVideoDetectiveApp:
             raise
     
     def _process_video_local(self, video_id: str, filepath: str):
-        """Process video on local server (forward to remote)"""
+        """Process video on local server (process locally)"""
         try:
-            # Forward to remote GPU server
-            import requests
+            # Process video locally instead of forwarding
+            logger.info(f"Processing video locally: {video_id}")
             
-            remote_url = f"{config.remote_gpu_server_url}/api/process_video"
+            # Start video processing
+            result = self.video_service.process_video(video_id, filepath)
             
-            with open(filepath, 'rb') as f:
-                files = {'video': f}
-                data = {'video_id': video_id}
-                
-                response = requests.post(remote_url, files=files, data=data, timeout=300)
-                response.raise_for_status()
-                
-                return response.json()
-                
+            # Start audio processing if enabled
+            if config.processing.audio_enabled:
+                self.audio_service.process_audio(video_id, filepath)
+            
+            return result
+            
         except Exception as e:
-            logger.error(f"Error forwarding video to remote: {e}")
+            logger.error(f"Error processing video locally: {e}")
             raise
     
     def _setup_error_handlers(self):
