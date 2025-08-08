@@ -132,9 +132,12 @@ print_status "Step 7/10: Installing PyTorch with CUDA support..."
 pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
 print_success "PyTorch with CUDA installed"
 
-# Step 8: Install Python Dependencies
+# Step 8: Install Python Dependencies (excluding PyTorch)
 print_status "Step 8/10: Installing Python dependencies..."
-pip install -r requirements_server.txt
+# Create a temporary requirements file without PyTorch to avoid conflicts
+grep -v "torch\|torchvision\|torchaudio\|--find-links" requirements_server.txt > requirements_temp.txt
+pip install -r requirements_temp.txt
+rm requirements_temp.txt
 print_success "Python dependencies installed"
 
 # Step 9: Create Directories and Setup
