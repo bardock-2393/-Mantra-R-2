@@ -39,19 +39,30 @@ class AudioService:
         try:
             # Initialize Whisper for speech recognition
             model_size = self.config.models.whisper_model
-            self.whisper_model = whisper.load_model(model_size)
+            try:
+                # Try the new Whisper API first
+                self.whisper_model = whisper.load_model(model_size)
+            except AttributeError:
+                # Fallback to older API or skip Whisper
+                logger.warning("Whisper load_model not available, skipping Whisper initialization")
+                self.whisper_model = None
             
             # Move to GPU if available
-            if torch.cuda.is_available():
+            if self.whisper_model and torch.cuda.is_available():
                 self.whisper_model = self.whisper_model.to("cuda:4")  # GPU 4 for audio
             
             # Initialize Wav2Vec2 for audio feature extraction
-            from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
-            self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.config.models.wav2vec2_model)
-            self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.config.models.wav2vec2_model)
-            
-            if torch.cuda.is_available():
-                self.wav2vec2_model = self.wav2vec2_model.to("cuda:4")
+            try:
+                from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
+                self.wav2vec2_model = Wav2Vec2ForCTC.from_pretrained(self.config.models.wav2vec2_model)
+                self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.config.models.wav2vec2_model)
+                
+                if torch.cuda.is_available():
+                    self.wav2vec2_model = self.wav2vec2_model.to("cuda:4")
+            except Exception as e:
+                logger.warning(f"Could not load Wav2Vec2: {e}")
+                self.wav2vec2_model = None
+                self.wav2vec2_processor = None
             
             # Initialize AudioCLIP for audio understanding
             try:
@@ -71,7 +82,12 @@ class AudioService:
             
         except Exception as e:
             logger.error(f"Error initializing audio models: {e}")
-            raise
+            # Don't raise the error, just log it and continue without audio models
+            logger.warning("Continuing without audio models due to initialization error")
+            self.whisper_model = None
+            self.wav2vec2_model = None
+            self.wav2vec2_processor = None
+            self.audioclip_model = None
     
     def _init_database(self):
         """Initialize database connection"""
@@ -201,6 +217,11 @@ class AudioService:
         try:
             events = []
             
+            # Check if Whisper model is available
+            if self.whisper_model is None:
+                logger.warning("Whisper model not available, skipping speech recognition")
+                return events
+            
             # Save chunk to temporary file for Whisper
             temp_path = os.path.join(self.config.storage.local_temp_dir, f"temp_{video_id}_{start_time:.2f}.wav")
             librosa.output.write_wav(temp_path, audio_chunk, self.config.processing.audio_sample_rate)
@@ -263,6 +284,11 @@ class AudioService:
         """Extract audio features using Wav2Vec2"""
         try:
             events = []
+            
+            # Check if Wav2Vec2 model is available
+            if self.wav2vec2_model is None or self.wav2vec2_processor is None:
+                logger.warning("Wav2Vec2 model not available, skipping audio feature extraction")
+                return events
             
             # Prepare audio for Wav2Vec2
             inputs = self.wav2vec2_processor(
