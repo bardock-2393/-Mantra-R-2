@@ -1,5 +1,5 @@
-# AI Video Detective - Server Requirements (A100 GPU Optimized)
-# This file contains all dependencies optimized for server deployment
+# AI Video Detective - Docker Requirements (Python 3.12 Compatible)
+# This file contains dependencies optimized for Docker deployment
 
 # Core Flask and Web Framework
 Flask==3.1.1
@@ -8,12 +8,6 @@ Flask-CORS==6.0.1
 gunicorn==23.0.0
 gevent==24.2.1
 gevent-websocket==0.10.1
-
-# PyTorch with CUDA 12.1 Support (A100 Optimized) - WORKING VERSION
---find-links https://download.pytorch.org/whl/torch_stable.html
-torch==2.5.1+cu121
-torchvision==0.20.1+cu121
-torchaudio==2.5.1+cu121
 
 # AI and Machine Learning
 transformers==4.38.2
@@ -34,11 +28,11 @@ openai-whisper==20231117
 librosa==0.10.1
 soundfile==0.12.1
 
-# Object Detection and Tracking
-ultralytics==8.1.28
-supervision==0.18.0
-bytetrack==0.2.0
-groundingdino==0.4.0
+# Object Detection and Tracking (Python 3.12 compatible versions)
+ultralytics
+supervision>=0.19.0  # Use newer version compatible with Python 3.12
+# bytetrack==0.2.0  # Removed - not compatible with Python 3.12
+# groundingdino==0.4.0  # Removed - package doesn't exist
 
 # Database and Storage
 redis==5.0.1
