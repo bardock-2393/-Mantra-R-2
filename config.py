@@ -231,11 +231,14 @@ class Config:
             "dashboard_port": 8265
         }
         
-        # Add num_cpus and num_gpus for new cluster
-        config.update({
-            "num_cpus": int(os.getenv("RAY_NUM_CPUS", "8")),
-            "num_gpus": self.gpu.num_gpus,
-        })
+        # Only add num_cpus and num_gpus if not connecting to existing cluster
+        # If RAY_ADDRESS is a specific address (like localhost:10001), don't add resources
+        # If RAY_ADDRESS is "auto", add resources for new cluster
+        if ray_address == "auto":
+            config.update({
+                "num_cpus": int(os.getenv("RAY_NUM_CPUS", "8")),
+                "num_gpus": self.gpu.num_gpus,
+            })
         
         return config
     
