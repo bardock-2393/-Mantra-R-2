@@ -9,9 +9,9 @@ import asyncio
 from typing import Dict, List, Any, Optional
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-import sglang
+import sglang as sgl
 from sglang import Runtime
-from sglang.srt.models import LlavaCpp
+from sglang.lang.chat_template import get_chat_template
 import redis
 from datetime import datetime
 
@@ -38,27 +38,20 @@ class AIService:
     def _init_vlm(self):
         """Initialize the VLM (LLaVA-NeXT-Video-7B) with SGLang"""
         try:
-            # Initialize SGLang runtime
-            self.runtime = Runtime()
-            
             # Load LLaVA-NeXT-Video-7B model
             model_path = self.config.models.llava_model
             device = self.config.models.llava_device
             
             logger.info(f"Loading VLM model: {model_path} on {device}")
             
-            # Initialize the model with SGLang
-            self.model = LlavaCpp(
-                model_path=model_path,
-                device=device,
-                max_new_tokens=2048,
-                temperature=0.7,
-                top_p=0.9,
-                repetition_penalty=1.1
-            )
+            # Create the backend runtime with the model
+            self.runtime = sgl.Runtime(model_path=model_path)
             
-            # Add model to runtime
-            self.runtime.add_model("llava-video", self.model)
+            # Set the chat template for LLaVA models
+            self.runtime.endpoint.chat_template = get_chat_template("llama-3-instruct-llava")
+            
+            # Set as default backend
+            sgl.set_default_backend(self.runtime)
             
             logger.info("VLM model loaded successfully")
             
@@ -607,9 +600,8 @@ Be specific, actionable, and professional in your response.
     def _generate_with_sglang(self, prompt: str) -> str:
         """Generate response using SGLang"""
         try:
-            # Use SGLang for generation
-            response = self.runtime.generate(
-                model="llava-video",
+            # Use SGLang for generation with the new API
+            response = sgl.generate(
                 prompt=prompt,
                 max_new_tokens=2048,
                 temperature=0.7,

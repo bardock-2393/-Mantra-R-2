@@ -44,7 +44,7 @@ ray
 
 # VLM and Language Models (only existing packages)
 llava-torch
-# sglang  # Removed - has Python version constraints
+sglang[srt]  # Required for SGLang runtime functionality
 # llava-hf  # Removed - package doesn't exist
 
 # Utilities
