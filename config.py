@@ -8,24 +8,28 @@ load_dotenv()
 @dataclass
 class GPUConfig:
     """GPU configuration for distributed processing"""
-    num_gpus: int = 7
+    num_gpus: int = None
     gpu_memory_gb: int = 80
     gpu_ids: List[int] = None
     
     def __post_init__(self):
+        # Use environment variable or default to 0 for server mode
+        if self.num_gpus is None:
+            self.num_gpus = int(os.getenv("RAY_NUM_GPUS", "0"))
+        
         if self.gpu_ids is None:
-            self.gpu_ids = list(range(self.num_gpus))
+            self.gpu_ids = list(range(self.num_gpus)) if self.num_gpus > 0 else []
 
 @dataclass
 class ModelConfig:
     """AI model configuration"""
     # VLM Models
     llava_model: str = "llava-hf/LLaVA-NeXT-Video-7B-hf"
-    llava_device: str = "cuda:5"  # GPU 5 for VLM
+    llava_device: str = None  # Will be set dynamically
     
     # Object Detection Models
     detection_model: str = "RT-DETR-v2"
-    detection_device: str = "cuda:0"  # GPU 0-3 for detection
+    detection_device: str = None  # Will be set dynamically
     
     # Audio Models
     whisper_model: str = "base"  # base, small, medium, large
@@ -36,6 +40,20 @@ class ModelConfig:
     tensorrt_enabled: bool = True
     tensorrt_precision: str = "fp16"  # fp16, int8
     tensorrt_engine_dir: str = "./tensorrt_engines"
+    
+    def __post_init__(self):
+        # Set device configuration based on available GPUs
+        num_gpus = int(os.getenv("RAY_NUM_GPUS", "0"))
+        
+        if num_gpus > 0:
+            # Use GPU if available
+            self.llava_device = f"cuda:{min(5, num_gpus - 1)}"
+            self.detection_device = "cuda:0"
+        else:
+            # Use CPU if no GPUs
+            self.llava_device = "cpu"
+            self.detection_device = "cpu"
+            self.tensorrt_enabled = False  # Disable TensorRT on CPU
 
 @dataclass
 class ProcessingConfig:
@@ -185,9 +203,11 @@ class Config:
     
     def _load_env_overrides(self):
         """Load configuration overrides from environment variables"""
-        # GPU Configuration
-        if os.getenv("NUM_GPUS"):
-            self.gpu.num_gpus = int(os.getenv("NUM_GPUS"))
+        # GPU Configuration - Use RAY_NUM_GPUS environment variable
+        if os.getenv("RAY_NUM_GPUS"):
+            self.gpu.num_gpus = int(os.getenv("RAY_NUM_GPUS"))
+            # Update GPU IDs based on new num_gpus
+            self.gpu.gpu_ids = list(range(self.gpu.num_gpus)) if self.gpu.num_gpus > 0 else []
         
         # Model Configuration
         if os.getenv("LLAVA_MODEL"):
@@ -256,8 +276,8 @@ class Config:
         os.makedirs(self.storage.local_temp_dir, exist_ok=True)
         os.makedirs(os.path.dirname(self.storage.duckdb_path), exist_ok=True)
         
-        # Check GPU availability
-        if self.is_remote_server:
+        # Check GPU availability only if GPUs are required
+        if self.is_remote_server and self.gpu.num_gpus > 0:
             try:
                 import torch
                 if not torch.cuda.is_available():
@@ -265,7 +285,7 @@ class Config:
                 if torch.cuda.device_count() < self.gpu.num_gpus:
                     raise ValueError(f"Not enough GPUs available. Required: {self.gpu.num_gpus}, Available: {torch.cuda.device_count()}")
             except ImportError:
-                raise ImportError("PyTorch not installed")
+                raise ValueError("PyTorch not available for GPU validation")
         
         return True
 
