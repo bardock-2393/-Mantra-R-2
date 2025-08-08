@@ -4,7 +4,7 @@ Audio Service for speech recognition and audio analysis
 
 import os
 import torch
-import torchaudio
+# import torchaudio  # Temporarily disabled due to compatibility issues
 import whisper
 import librosa
 import numpy as np

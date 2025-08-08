@@ -44,13 +44,21 @@ class VideoProcessor:
             self.detector.to(self.device)
             
             # Initialize ByteTrack for tracking
-            from bytetrack.byte_tracker import BYTETracker
-            self.tracker = BYTETracker(
-                track_thresh=0.5,
-                track_buffer=30,
-                match_thresh=0.8,
-                frame_rate=30
-            )
+            try:
+                from bytetrack.byte_tracker import BYTETracker
+                self.tracker = BYTETracker(
+                    track_thresh=0.5,
+                    track_buffer=30,
+                    match_thresh=0.8,
+                    frame_rate=30
+                )
+                logger.info(f"ByteTrack tracker initialized on GPU {self.gpu_id}")
+            except ImportError:
+                logger.warning(f"ByteTrack not available on GPU {self.gpu_id}, using fallback tracking")
+                self.tracker = None
+            except Exception as e:
+                logger.warning(f"Could not initialize ByteTrack on GPU {self.gpu_id}: {e}")
+                self.tracker = None
             
             logger.info(f"Models initialized on GPU {self.gpu_id}")
             

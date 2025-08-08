@@ -221,7 +221,7 @@ class Config:
     
     def get_ray_config(self) -> Dict[str, Any]:
         """Get Ray configuration for distributed processing"""
-        ray_address = os.getenv("RAY_ADDRESS", "auto")
+        ray_address = os.getenv("RAY_ADDRESS", "localhost:10001")
         
         # Base configuration - minimal for connecting to existing cluster
         config = {
