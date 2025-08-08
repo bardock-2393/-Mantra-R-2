@@ -49,7 +49,17 @@ class AudioService:
             
             # Move to GPU if available
             if self.whisper_model and torch.cuda.is_available():
-                self.whisper_model = self.whisper_model.to("cuda:4")  # GPU 4 for audio
+                try:
+                    # Check if GPU 4 is available, otherwise use GPU 0 or CPU
+                    if torch.cuda.device_count() > 4:
+                        self.whisper_model = self.whisper_model.to("cuda:4")
+                    elif torch.cuda.device_count() > 0:
+                        self.whisper_model = self.whisper_model.to("cuda:0")
+                    else:
+                        self.whisper_model = self.whisper_model.to("cpu")
+                except Exception as e:
+                    logger.warning(f"Failed to move Whisper to GPU, using CPU: {e}")
+                    self.whisper_model = self.whisper_model.to("cpu")
             
             # Initialize Wav2Vec2 for audio feature extraction
             try:
@@ -58,7 +68,17 @@ class AudioService:
                 self.wav2vec2_processor = Wav2Vec2Processor.from_pretrained(self.config.models.wav2vec2_model)
                 
                 if torch.cuda.is_available():
-                    self.wav2vec2_model = self.wav2vec2_model.to("cuda:4")
+                    try:
+                        # Check if GPU 4 is available, otherwise use GPU 0 or CPU
+                        if torch.cuda.device_count() > 4:
+                            self.wav2vec2_model = self.wav2vec2_model.to("cuda:4")
+                        elif torch.cuda.device_count() > 0:
+                            self.wav2vec2_model = self.wav2vec2_model.to("cuda:0")
+                        else:
+                            self.wav2vec2_model = self.wav2vec2_model.to("cpu")
+                    except Exception as e:
+                        logger.warning(f"Failed to move Wav2Vec2 to GPU, using CPU: {e}")
+                        self.wav2vec2_model = self.wav2vec2_model.to("cpu")
             except Exception as e:
                 logger.warning(f"Could not load Wav2Vec2: {e}")
                 self.wav2vec2_model = None

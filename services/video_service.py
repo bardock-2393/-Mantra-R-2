@@ -36,12 +36,28 @@ class VideoProcessor:
     def _init_models(self):
         """Initialize detection and tracking models"""
         try:
+            # Check if GPU device is available
+            if not torch.cuda.is_available():
+                logger.warning(f"CUDA not available, using CPU for GPU {self.gpu_id}")
+                self.device = "cpu"
+            elif self.gpu_id >= torch.cuda.device_count():
+                logger.warning(f"GPU {self.gpu_id} not available, using CPU")
+                self.device = "cpu"
+            
             # Initialize RT-DETR-v2 for object detection
             from ultralytics import YOLO
             
             # Load RT-DETR-v2 model
             self.detector = YOLO('rtdetr-l.pt')  # RT-DETR large model
-            self.detector.to(self.device)
+            
+            # Try to move to device, fallback to CPU if failed
+            try:
+                self.detector.to(self.device)
+                logger.info(f"Model loaded on {self.device}")
+            except Exception as e:
+                logger.warning(f"Failed to load model on {self.device}, using CPU: {e}")
+                self.device = "cpu"
+                self.detector.to(self.device)
             
             # Initialize ByteTrack for tracking
             try:
@@ -52,18 +68,18 @@ class VideoProcessor:
                     match_thresh=0.8,
                     frame_rate=30
                 )
-                logger.info(f"ByteTrack tracker initialized on GPU {self.gpu_id}")
+                logger.info(f"ByteTrack tracker initialized on {self.device}")
             except ImportError:
-                logger.warning(f"ByteTrack not available on GPU {self.gpu_id}, using fallback tracking")
+                logger.warning(f"ByteTrack not available, using fallback tracking")
                 self.tracker = None
             except Exception as e:
-                logger.warning(f"Could not initialize ByteTrack on GPU {self.gpu_id}: {e}")
+                logger.warning(f"Could not initialize ByteTrack: {e}")
                 self.tracker = None
             
-            logger.info(f"Models initialized on GPU {self.gpu_id}")
+            logger.info(f"Models initialized on {self.device}")
             
         except Exception as e:
-            logger.error(f"Error initializing models on GPU {self.gpu_id}: {e}")
+            logger.error(f"Error initializing models: {e}")
             raise
     
     def process_video_window(self, video_path: str, start_time: float, end_time: float, 
