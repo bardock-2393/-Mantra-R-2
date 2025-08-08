@@ -176,12 +176,25 @@ class VideoProcessor:
             return []
     
     def _track_objects(self, detections: List[Dict], timestamp: float) -> List[Dict]:
-        """Track objects using ByteTrack"""
+        """Track objects using ByteTrack or fallback"""
         try:
             if not detections:
                 return []
             
-            # Convert detections to ByteTrack format
+            # Check if ByteTrack is available
+            if self.tracker is None:
+                # Fallback: convert detections directly to tracks
+                tracks = []
+                for i, det in enumerate(detections):
+                    tracks.append({
+                        'track_id': f"det_{i}_{int(timestamp)}",
+                        'bbox': det['bbox'],
+                        'timestamp': timestamp,
+                        'class': det.get('class', 'object')
+                    })
+                return tracks
+            
+            # Use ByteTrack for tracking
             dets = []
             for det in detections:
                 bbox = det['bbox']
@@ -192,11 +205,11 @@ class VideoProcessor:
             
             dets = np.array(dets)
             
-            # Update tracker
+            # Update tracker (assuming 1920x1080 as default image size)
             online_targets = self.tracker.update(
                 dets,
-                [frame.shape[0], frame.shape[1]],  # image size
-                [frame.shape[0], frame.shape[1]]   # image size
+                [1080, 1920],  # image size (height, width)
+                [1080, 1920]   # image size (height, width)
             )
             
             # Convert tracks to events
@@ -213,7 +226,16 @@ class VideoProcessor:
             
         except Exception as e:
             logger.error(f"Error in object tracking: {e}")
-            return []
+            # Fallback: return detections as tracks
+            tracks = []
+            for i, det in enumerate(detections):
+                tracks.append({
+                    'track_id': f"det_{i}_{int(timestamp)}",
+                    'bbox': det['bbox'],
+                    'timestamp': timestamp,
+                    'class': det.get('class', 'object')
+                })
+            return tracks
     
     def _generate_events(self, tracks: List[Dict], timestamp: float, video_id: str) -> List[Dict]:
         """Generate events from tracks"""
