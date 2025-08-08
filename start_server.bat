@@ -11,14 +11,26 @@ if not exist "app.py" (
     exit /b 1
 )
 
-REM Set environment variables for server mode
+REM Load environment variables from server.env
+if exist "server.env" (
+    echo Loading environment variables from server.env...
+    for /f "tokens=1,2 delims==" %%a in (server.env) do (
+        if not "%%a"=="" if not "%%a:~0,1%"=="#" (
+            set "%%a=%%b"
+            echo   %%a=%%b
+        )
+    )
+) else (
+    echo Warning: server.env not found, using default values
+)
+
+REM Set additional environment variables for server mode
 set RAY_NUM_CPUS=2
 set RAY_NUM_GPUS=0
 set RAY_OBJECT_STORE_MEMORY=500000000
 set ENV=production
 set DEBUG=false
 set IS_REMOTE_SERVER=true
-set REMOTE_GPU_SERVER_URL=http://localhost:8001
 
 echo Environment variables set for server mode:
 echo   RAY_NUM_CPUS=%RAY_NUM_CPUS%

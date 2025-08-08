@@ -15,6 +15,17 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+# Load environment variables first
+try:
+    from load_env import load_env_file
+    script_dir = Path(__file__).parent
+    server_env_path = script_dir / "server.env"
+    if server_env_path.exists():
+        load_env_file(server_env_path)
+        print("Loaded server environment variables")
+except ImportError:
+    print("Warning: Could not load environment variables")
+
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -79,13 +90,17 @@ class AIVideoDetectiveApp:
         # CORS
         CORS(self.app, origins=config.security.cors_origins)
         
-        # SocketIO
+        # SocketIO - Fixed configuration to prevent write() before start_response
         self.socketio = SocketIO(
             self.app,
             cors_allowed_origins=config.security.cors_origins,
             ping_timeout=config.network.websocket_ping_timeout,
             ping_interval=config.network.websocket_ping_interval,
-            async_mode='threading'  # Use threading instead of gevent for better compatibility
+            async_mode='threading',
+            logger=True,
+            engineio_logger=True,
+            always_connect=True,
+            transports=['websocket', 'polling']
         )
         
         # Setup SocketIO events
@@ -455,13 +470,14 @@ class AIVideoDetectiveApp:
         logger.info(f"Environment: {config.env}")
         logger.info(f"Remote server: {config.is_remote_server}")
         
-        # Run with SocketIO
+        # Run with SocketIO - Fixed configuration
         self.socketio.run(
             self.app,
             host=host,
             port=port,
             debug=debug,
-            use_reloader=False
+            use_reloader=False,
+            allow_unsafe_werkzeug=True
         )
 
 def create_app():
