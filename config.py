@@ -221,14 +221,26 @@ class Config:
     
     def get_ray_config(self) -> Dict[str, Any]:
         """Get Ray configuration for distributed processing"""
-        return {
-            "address": os.getenv("RAY_ADDRESS", "auto"),
-            "num_cpus": int(os.getenv("RAY_NUM_CPUS", "8")),
-            "num_gpus": self.gpu.num_gpus,
+        ray_address = os.getenv("RAY_ADDRESS", "auto")
+        
+        # Base configuration
+        config = {
+            "address": ray_address,
             "object_store_memory": int(os.getenv("RAY_OBJECT_STORE_MEMORY", "1000000000")),  # 1GB
             "dashboard_host": "0.0.0.0",
             "dashboard_port": 8265
         }
+        
+        # Only add num_cpus and num_gpus if starting a new cluster (not connecting to existing)
+        # If RAY_ADDRESS is "auto", we might start a new cluster
+        # If RAY_ADDRESS is a specific address, we're connecting to existing cluster
+        if ray_address == "auto":
+            config.update({
+                "num_cpus": int(os.getenv("RAY_NUM_CPUS", "8")),
+                "num_gpus": self.gpu.num_gpus,
+            })
+        
+        return config
     
     def validate(self) -> bool:
         """Validate configuration"""
