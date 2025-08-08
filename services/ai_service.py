@@ -10,8 +10,8 @@ from typing import Dict, List, Any, Optional
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import sglang
-from sglang.srt.managers import Runtime
-from sglang.srt.models import LlavaCpp
+from sglang import Runtime
+from sglang import LlavaCpp
 import redis
 from datetime import datetime
 
