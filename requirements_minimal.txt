@@ -1,0 +1,86 @@
+# AI Video Detective - Minimal Requirements (No Version Constraints)
+# This file contains dependencies without version constraints for maximum compatibility
+
+# Core Flask and Web Framework
+Flask
+Flask-SocketIO
+Flask-CORS
+gunicorn
+gevent
+gevent-websocket
+
+# AI and Machine Learning
+transformers
+accelerate
+sentencepiece
+protobuf
+
+# Computer Vision and Video Processing
+opencv-python
+Pillow
+ffmpeg-python
+moviepy
+imageio
+imageio-ffmpeg
+
+# Audio Processing
+openai-whisper
+librosa
+soundfile
+
+# Object Detection and Tracking
+ultralytics
+supervision
+
+# Database and Storage
+redis
+duckdb
+pandas
+numpy
+pyarrow
+
+# Distributed Computing
+ray
+
+# VLM and Language Models
+sglang
+llava-hf
+llava-torch
+
+# Utilities
+requests
+python-dotenv
+pydantic
+loguru
+tqdm
+psutil
+
+# GPU Optimization
+tensorrt
+onnx
+onnxruntime-gpu
+
+# Additional Audio Models
+audioclip
+wav2vec2
+
+# File Handling
+aiofiles
+python-multipart
+
+# Configuration
+pyyaml
+configparser
+
+# Additional Server Dependencies
+scipy
+scikit-learn
+matplotlib
+seaborn
+
+# Performance Monitoring
+nvidia-ml-py
+GPUtil
+
+# System Monitoring
+memory-profiler 
