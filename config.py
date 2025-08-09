@@ -25,13 +25,13 @@ class Config:
     SESSION_EXPIRY = 3600  # 1 hour in seconds
     UPLOAD_CLEANUP_TIME = 2 * 3600  # 2 hours in seconds
     
-    # Analysis Configuration
-    MAX_OUTPUT_TOKENS = 32768
-    CHAT_MAX_TOKENS = 8192
-    TEMPERATURE = 0.2
-    CHAT_TEMPERATURE = 0.3
-    TOP_P = 0.9
-    TOP_K = 40
+    # Analysis Configuration - A100 Optimized
+    MAX_OUTPUT_TOKENS = 65536  # Increased for A100
+    CHAT_MAX_TOKENS = 16384    # Increased for better responses
+    TEMPERATURE = 0.1          # Lower for more consistent results
+    CHAT_TEMPERATURE = 0.2     # Lower for focused chat
+    TOP_P = 0.95              # Higher for A100
+    TOP_K = 50                # Optimized for 27B model
     
     # Default Video Configuration
     DEFAULT_VIDEO_PATH = 'BMW M4 - Ultimate Racetrack - BMW Canada (720p, h264).mp4'

@@ -13,8 +13,8 @@ import tempfile
 from config import Config
 from analysis_templates import generate_analysis_prompt
 
-# Initialize Gemma 3 model
-model_id = "google/gemma-3-12b-it"
+# Initialize Gemma 3 model - Optimized for A100 80GB
+model_id = "google/gemma-3-27b-it"  # Upgraded to 27B for A100
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Global variables for model and processor (lazy loading)
@@ -22,37 +22,56 @@ model = None
 processor = None
 
 def initialize_model():
-    """Initialize Gemma 3 model and processor"""
+    """Initialize Gemma 3 model and processor - A100 Optimized"""
     global model, processor
     if model is None:
-        print("Loading Gemma 3 model...")
+        print("Loading Gemma 3 27B model for A100...")
         try:
+            # A100 optimized settings
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            torch.set_float32_matmul_precision('high')
+            
             model = Gemma3ForConditionalGeneration.from_pretrained(
                 model_id, 
                 device_map="auto",
-                torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32
+                torch_dtype=torch.bfloat16,  # A100 supports bfloat16 natively
+                attn_implementation="flash_attention_2",  # Flash Attention for speed
+                trust_remote_code=True
             ).eval()
+            
             processor = AutoProcessor.from_pretrained(model_id)
-            print("Gemma 3 model loaded successfully")
+            
+            # Compile model for faster inference (PyTorch 2.0+)
+            if hasattr(torch, 'compile'):
+                print("Compiling model for A100 optimization...")
+                model = torch.compile(model, mode="reduce-overhead")
+            
+            print(f"✅ Gemma 3 27B model loaded successfully on A100")
+            print(f"📊 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB")
+            
         except Exception as e:
-            print(f"Error loading Gemma 3 model: {e}")
-            # Fallback to CPU and float32 if CUDA/bfloat16 fails
+            print(f"Error loading Gemma 3 27B model: {e}")
+            print("Falling back to 12B model...")
+            # Fallback to 12B model
+            model_id_fallback = "google/gemma-3-12b-it"
             model = Gemma3ForConditionalGeneration.from_pretrained(
-                model_id, 
-                device_map="cpu",
-                torch_dtype=torch.float32
+                model_id_fallback, 
+                device_map="auto",
+                torch_dtype=torch.bfloat16
             ).eval()
-            processor = AutoProcessor.from_pretrained(model_id)
-            print("Gemma 3 model loaded with CPU fallback")
+            processor = AutoProcessor.from_pretrained(model_id_fallback)
+            print("Gemma 3 12B model loaded as fallback")
 
-def extract_video_frames(video_path, num_frames=10):
-    """Extract frames from video for analysis"""
+def extract_video_frames(video_path, num_frames=16):
+    """Extract frames from video for analysis - A100 Optimized"""
     cap = cv2.VideoCapture(video_path)
     frames = []
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = cap.get(cv2.CAP_PROP_FPS)
     duration = frame_count / fps if fps > 0 else 0
     
+    # Optimize for A100: Extract more frames for better analysis
     # Calculate frame indices to extract evenly distributed frames
     frame_indices = [int(i * frame_count / num_frames) for i in range(num_frames)]
     
@@ -61,8 +80,10 @@ def extract_video_frames(video_path, num_frames=10):
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, frame = cap.read()
         if ret:
+            # Resize to optimal resolution for Gemma 3 (896x896)
+            frame_resized = cv2.resize(frame, (896, 896), interpolation=cv2.INTER_LANCZOS4)
             # Convert BGR to RGB
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
             # Convert to PIL Image
             pil_image = Image.fromarray(frame_rgb)
             frames.append(pil_image)
@@ -145,8 +166,8 @@ You are analyzing a video with duration {duration:.2f} seconds. The frames provi
             }
         ]
         
-        # Add additional frames for comprehensive analysis
-        for i, frame in enumerate(frames[1:5], 1):  # Use first 5 frames to avoid token limits
+        # A100 Optimization: Process more frames with batching
+        for i, frame in enumerate(frames[1:8], 1):  # Use 8 frames for A100
             messages[-1]["content"].append({"type": "image", "image": frame})
             messages[-1]["content"].append({"type": "text", "text": f"Frame at {timestamps[i]:.2f}s:"})
         
@@ -156,17 +177,20 @@ You are analyzing a video with duration {duration:.2f} seconds. The frames provi
             tokenize=True,
             return_dict=True, 
             return_tensors="pt"
-        ).to(model.device)
+        ).to(model.device, dtype=torch.bfloat16)
         
         input_len = inputs["input_ids"].shape[-1]
         
+        # A100 optimized generation settings
         with torch.inference_mode():
             generation = model.generate(
                 **inputs, 
                 max_new_tokens=Config.MAX_OUTPUT_TOKENS,
                 temperature=Config.TEMPERATURE,
                 top_p=Config.TOP_P,
-                do_sample=True if Config.TEMPERATURE > 0 else False
+                do_sample=True if Config.TEMPERATURE > 0 else False,
+                use_cache=True,  # Enable KV cache for speed
+                pad_token_id=processor.tokenizer.eos_token_id
             )
             generation = generation[0][input_len:]
         
