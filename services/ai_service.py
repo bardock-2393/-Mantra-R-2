@@ -83,25 +83,60 @@ def initialize_model():
             print(f"Error loading Gemma 3 12B model: {e}")
             raise e
 
-def extract_video_frames(video_path, num_frames=16):
-    """Extract frames from video for analysis - A100 Optimized"""
+def extract_video_frames(video_path, num_frames=None):
+    """Extract frames from video for analysis - A100 Optimized with Smart Sampling for Long Videos"""
+    import random
+    
     cap = cv2.VideoCapture(video_path)
     frames = []
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = cap.get(cv2.CAP_PROP_FPS)
     duration = frame_count / fps if fps > 0 else 0
     
-    # Optimize for A100: Extract more frames for better analysis
-    # Calculate frame indices to extract evenly distributed frames
-    frame_indices = [int(i * frame_count / num_frames) for i in range(num_frames)]
+    # Auto-determine frame count based on video length
+    if num_frames is None:
+        if duration >= Config.LONG_VIDEO_THRESHOLD:  # 1+ hour videos
+            num_frames = Config.MAX_FRAMES_LONG_VIDEO
+            print(f"🎬 Long video detected ({duration/60:.1f} minutes) - using smart sampling with {num_frames} frames")
+        else:
+            num_frames = Config.MAX_FRAMES_SHORT_VIDEO
+            print(f"🎬 Short video ({duration/60:.1f} minutes) - using regular sampling with {num_frames} frames")
+    
+    # Smart sampling strategy for different video lengths
+    if duration >= Config.LONG_VIDEO_THRESHOLD:  # Long videos (1+ hours)
+        # Strategic frame selection for long videos
+        key_points = [
+            0,  # Start
+            frame_count // 6,  # ~17%
+            frame_count // 3,  # ~33%
+            frame_count // 2,  # 50% (middle)
+            2 * frame_count // 3,  # ~67%
+            5 * frame_count // 6,  # ~83%
+            frame_count - 1  # End
+        ]
+        
+        # Add random samples from different segments for variety
+        if num_frames > len(key_points):
+            segment_size = frame_count // num_frames
+            for i in range(len(key_points), num_frames):
+                random_frame = i * segment_size + random.randint(0, min(segment_size//2, frame_count//20))
+                key_points.append(min(random_frame, frame_count-1))
+        
+        frame_indices = sorted(list(set(key_points)))[:num_frames]
+        print(f"📊 Smart sampling: {len(frame_indices)} strategic frames from {frame_count} total frames")
+    else:
+        # Regular distributed sampling for shorter videos
+        frame_indices = [int(i * frame_count / num_frames) for i in range(num_frames)]
+        print(f"📊 Regular sampling: {len(frame_indices)} evenly distributed frames")
     
     timestamps = []
     for i, frame_idx in enumerate(frame_indices):
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, frame = cap.read()
         if ret:
-            # Resize to optimal resolution for Gemma 3 (896x896)
-            frame_resized = cv2.resize(frame, (896, 896), interpolation=cv2.INTER_LANCZOS4)
+            # Optimized resize for A100 - use faster interpolation for long videos
+            interpolation = cv2.INTER_NEAREST if duration >= Config.LONG_VIDEO_THRESHOLD else cv2.INTER_LANCZOS4
+            frame_resized = cv2.resize(frame, (896, 896), interpolation=interpolation)
             # Convert BGR to RGB
             frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
             # Convert to PIL Image
@@ -112,6 +147,11 @@ def extract_video_frames(video_path, num_frames=16):
             timestamps.append(timestamp)
     
     cap.release()
+    
+    # Memory optimization for long videos
+    if duration >= Config.LONG_VIDEO_THRESHOLD:
+        torch.cuda.empty_cache()  # Clear GPU memory after processing
+    
     return frames, timestamps, duration
 
 async def analyze_video_with_gemini(video_path, analysis_type, user_focus):
@@ -127,10 +167,10 @@ async def analyze_video_with_gemini(video_path, analysis_type, user_focus):
         # Clean up before analysis
         cleanup_cache()
         
-        # Extract frames from video (reduced for space efficiency)
+        # Extract frames from video with smart sampling
         frame_start = time.time()
-        print('Extracting frames from video...')
-        frames, timestamps, duration = extract_video_frames(video_path, num_frames=3)
+        print('🎬 Extracting frames from video...')
+        frames, timestamps, duration = extract_video_frames(video_path)  # Auto-detects long videos
         frame_time = time.time() - frame_start
         
         if not frames:
@@ -138,43 +178,57 @@ async def analyze_video_with_gemini(video_path, analysis_type, user_focus):
         
         print(f'✅ Extracted {len(frames)} frames in {frame_time:.2f}s (video duration: {duration:.2f}s)')
         
-        # Enhanced agentic system prompt for superior analysis quality
-        agent_system_prompt = f"""
-You are an **exceptional AI video analysis agent** with unparalleled understanding capabilities. Your mission is to provide **comprehensive, precise, and insightful analysis** that serves as the foundation for high-quality user interactions.
+        # Adaptive system prompt based on video length
+        is_long_video = duration >= Config.LONG_VIDEO_THRESHOLD
+        video_type = "long-form" if is_long_video else "short-form"
+        
+        if is_long_video:
+            # Condensed prompt for long videos (faster processing)
+            agent_system_prompt = f"""
+You are an **AI video analysis agent** optimized for {video_type} content analysis. Provide **concise, precise analysis** focusing on key elements.
 
-## AGENT ANALYSIS PROTOCOL
+## ANALYSIS PROTOCOL FOR LONG VIDEOS ({duration/60:.1f} minutes)
 
-### Analysis Quality Standards:
-1. **Maximum Precision**: Provide exact timestamps, durations, and measurements
-2. **Comprehensive Coverage**: Analyze every significant aspect of the video
-3. **Detailed Descriptions**: Use vivid, descriptive language for visual elements
-4. **Quantitative Data**: Include specific numbers, counts, and measurements
-5. **Pattern Recognition**: Identify recurring themes, behaviors, and sequences
-6. **Contextual Understanding**: Explain significance and relationships between elements
-7. **Professional Structure**: Organize information logically with clear sections
-8. **Evidence-Based**: Support all observations with specific visual evidence
+### Key Requirements:
+- **Concise Summaries**: Focus on major themes and key moments
+- **Strategic Timestamps**: Highlight critical transitions and events
+- **Pattern Recognition**: Identify recurring elements across the video
+- **Efficient Structure**: Use clear headings and bullet points
 
-### Enhanced Analysis Focus:
-- **Temporal Precision**: Exact timestamps for all events and transitions
-- **Spatial Relationships**: Detailed descriptions of positioning and movement
-- **Visual Details**: Colors, lighting, composition, and technical quality
-- **Behavioral Analysis**: Actions, interactions, and human elements
-- **Technical Assessment**: Quality, production values, and technical specifications
-- **Narrative Structure**: Story flow, pacing, and dramatic elements
-- **Environmental Context**: Setting, atmosphere, and contextual factors
+### Analysis Focus:
+- **Major Events**: Key moments and transitions
+- **Visual Themes**: Consistent elements throughout
+- **Technical Quality**: Overall production assessment
+- **Narrative Flow**: Story progression and pacing
 
-### Output Quality Requirements:
-- Use **bold formatting** for emphasis on key information
-- Include **specific timestamps** for all temporal references
-- Provide **quantitative measurements** (durations, counts, sizes)
-- Use **bullet points** for lists and multiple items
-- Structure with **clear headings** for different analysis areas
-- Include **cross-references** between related information
-- Offer **insights and interpretations** beyond simple description
+**Video Duration**: {duration:.1f}s ({duration/60:.1f} minutes)
+**Frames Analyzed**: {len(frames)} strategic samples at: {[f'{t:.1f}s' for t in timestamps]}
 
-Your analysis will be used for **high-quality user interactions**, so ensure every detail is **precise, comprehensive, and well-structured** for optimal user experience.
+Provide **concise, actionable insights** suitable for real-time analysis.
+"""
+        else:
+            # Detailed prompt for shorter videos
+            agent_system_prompt = f"""
+You are an **exceptional AI video analysis agent** providing **comprehensive analysis** for {video_type} content.
 
-You are analyzing a video with duration {duration:.2f} seconds. The frames provided are extracted at timestamps: {[f'{t:.2f}s' for t in timestamps]}.
+## DETAILED ANALYSIS PROTOCOL
+
+### Analysis Standards:
+- **Maximum Precision**: Exact timestamps and measurements
+- **Comprehensive Coverage**: Analyze all significant aspects
+- **Detailed Descriptions**: Vivid, descriptive language
+- **Evidence-Based**: Support observations with visual evidence
+
+### Focus Areas:
+- **Temporal Precision**: Exact timestamps for events
+- **Visual Details**: Colors, lighting, composition
+- **Behavioral Analysis**: Actions and interactions
+- **Technical Assessment**: Quality and production values
+
+**Video Duration**: {duration:.1f}s
+**Frames Analyzed**: {len(frames)} at timestamps: {[f'{t:.1f}s' for t in timestamps]}
+
+Provide **detailed, comprehensive analysis** for optimal user experience.
 """
         
         # Analyze the first frame to get initial insights, then analyze sequence
@@ -192,10 +246,26 @@ You are analyzing a video with duration {duration:.2f} seconds. The frames provi
             }
         ]
         
-        # Process frames efficiently (reduced for disk space)
-        for i, frame in enumerate(frames[1:2], 1):  # Use only 1 additional frame for max speed
-            messages[-1]["content"].append({"type": "image", "image": frame})
-            messages[-1]["content"].append({"type": "text", "text": f"Frame at {timestamps[i]:.2f}s:"})
+        # Adaptive frame processing based on video length
+        if is_long_video:
+            # For long videos: Use more frames but process efficiently 
+            max_additional_frames = min(len(frames) - 1, 3)  # Up to 3 additional frames
+            frame_step = max(1, (len(frames) - 1) // max_additional_frames) if max_additional_frames > 0 else 1
+            selected_frames = frames[1::frame_step][:max_additional_frames]
+            selected_timestamps = timestamps[1::frame_step][:max_additional_frames]
+            
+            for i, (frame, timestamp) in enumerate(zip(selected_frames, selected_timestamps), 1):
+                messages[-1]["content"].append({"type": "image", "image": frame})
+                messages[-1]["content"].append({"type": "text", "text": f"Key frame at {timestamp:.1f}s:"})
+            
+            print(f"📊 Processing {len(selected_frames)} key frames for long video analysis")
+        else:
+            # For short videos: Use minimal frames for speed
+            for i, frame in enumerate(frames[1:1], 1):  # Use 0 additional frames for max speed
+                messages[-1]["content"].append({"type": "image", "image": frame})
+                messages[-1]["content"].append({"type": "text", "text": f"Frame at {timestamps[i]:.2f}s:"})
+            
+            print(f"📊 Processing {len(frames[1:1])} additional frames for short video analysis")
         
         inputs = processor.apply_chat_template(
             messages, 
@@ -213,7 +283,7 @@ You are analyzing a video with duration {duration:.2f} seconds. The frames provi
         with torch.inference_mode():
             generation = model.generate(
                 **inputs, 
-                max_new_tokens=min(Config.MAX_OUTPUT_TOKENS, 16384),  # Limit tokens to save space
+                max_new_tokens=Config.MAX_OUTPUT_TOKENS,  # Use direct config value for speed
                 temperature=Config.TEMPERATURE,
                 top_p=Config.TOP_P,
                 do_sample=True if Config.TEMPERATURE > 0 else False,
@@ -231,20 +301,26 @@ You are analyzing a video with duration {duration:.2f} seconds. The frames provi
         total_time = time.time() - start_time
         print(f'🏁 Total analysis completed in {total_time:.2f}s')
         
-        # Add timing information to the response for UI display
+        # Add enhanced timing information for long videos
+        video_info = f"({duration/60:.1f} min, {len(frames)} frames)" if is_long_video else f"({duration:.1f}s, {len(frames)} frames)"
         timing_info = f"""
 
 ---
 ⏱️ **Performance Report:**
+- **Video**: {video_info}
 - **Frame Extraction**: {frame_time:.2f}s
 - **AI Inference**: {inference_time:.2f}s  
 - **Total Time**: {total_time:.2f}s
 - **Speed**: {len(frames)/total_time:.1f} frames/sec
+- **Mode**: {'Long Video (Smart Sampling)' if is_long_video else 'Short Video (Full Analysis)'} 
 - **GPU**: A100 Optimized ⚡
 """
         
-        # Clean up after generation
+        # Enhanced cleanup for long videos
         cleanup_cache()
+        if is_long_video:
+            torch.cuda.empty_cache()  # Additional GPU memory cleanup for long videos
+            torch.cuda.synchronize()  # Ensure all GPU operations complete
         
         return response_text + timing_info
         

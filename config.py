@@ -10,10 +10,10 @@ class Config:
     # Flask Configuration
     SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here')
     UPLOAD_FOLDER = 'static/uploads'
-    MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB
     
     # File Upload Configuration
     ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'webm', 'mkv'}
+    MAX_CONTENT_LENGTH = 200 * 1024 * 1024 * 1024  # 200GB for long videos
     
     # Redis Configuration
     REDIS_URL = "redis://default:nswO0Z95wT9aeXIIOZMMphnDhsPY3slG@redis-10404.c232.us-east-1-2.ec2.redns.redis-cloud.com:10404"
@@ -26,12 +26,18 @@ class Config:
     UPLOAD_CLEANUP_TIME = 2 * 3600  # 2 hours in seconds
     
     # Analysis Configuration - A100 Optimized for SPEED
-    MAX_OUTPUT_TOKENS = 4096   # Reduced for speed
-    CHAT_MAX_TOKENS = 2048     # Reduced for speed
+    MAX_OUTPUT_TOKENS = 512    # Ultra-fast for real-time
+    CHAT_MAX_TOKENS = 256      # Ultra-fast for real-time
     TEMPERATURE = 0.0          # Greedy decoding (fastest)
     CHAT_TEMPERATURE = 0.0     # Greedy decoding (fastest)
     TOP_P = 0.95              # Higher for A100
     TOP_K = 50                # Optimized for 27B model
+    
+    # Long Video Configuration (120min+ support)
+    LONG_VIDEO_THRESHOLD = 3600        # 1 hour in seconds
+    MAX_FRAMES_SHORT_VIDEO = 3         # For videos < 1 hour
+    MAX_FRAMES_LONG_VIDEO = 8          # For videos >= 1 hour (smart sampling)
+    MAX_FILE_SIZE_GB = 200             # Maximum file size in GB
     
     # Default Video Configuration
     DEFAULT_VIDEO_PATH = 'BMW M4 - Ultimate Racetrack - BMW Canada (720p, h264).mp4'
