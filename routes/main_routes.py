@@ -89,15 +89,27 @@ def get_analysis_types():
 def init_streaming_upload():
     """Initialize streaming upload for large files"""
     try:
+        print("🚀 Streaming upload init called")
         data = request.get_json(force=True, silent=True) or {}
+        print(f"📋 Request data: {data}")
+        
         filename = secure_filename(data.get("filename", "file.bin"))
+        print(f"📁 Filename: {filename}")
         
         if not allowed_file(filename):
+            print(f"❌ Invalid file type: {filename}")
             return jsonify({"error": "Invalid file type"}), 400
             
         total = int(data.get("size", 0))
+        print(f"📊 File size: {total} bytes ({total / (1024**2):.1f}MB)")
+        
         if total > Config.MAX_CONTENT_LENGTH:
+            print(f"❌ File too large: {total} > {Config.MAX_CONTENT_LENGTH}")
             return jsonify({"error": f"File too large. Max size: {Config.MAX_CONTENT_LENGTH} bytes"}), 413
+            
+        # Ensure upload folder exists
+        os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
+        print(f"📂 Upload folder: {Config.UPLOAD_FOLDER}")
             
         upload_id = uuid.uuid4().hex
         session_id = session.get('session_id', generate_session_id())

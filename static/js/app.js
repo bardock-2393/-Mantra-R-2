@@ -269,7 +269,19 @@ class VideoDetective {
             
             this.showStreamingProgress();
             
+            // Update progress details
+            const detailsElement = document.getElementById('streamingDetails');
+            if (detailsElement) {
+                detailsElement.textContent = 'Initializing upload session...';
+            }
+            
             // Step 1: Initialize upload
+            console.log('📋 Initializing upload:', {
+                filename: file.name,
+                size: file.size,
+                sizeMB: (file.size / (1024**2)).toFixed(1)
+            });
+            
             const initResponse = await fetch('/upload/init', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -279,13 +291,26 @@ class VideoDetective {
                 })
             });
             
+            console.log('📡 Init response status:', initResponse.status);
+            
             if (!initResponse.ok) {
-                const error = await initResponse.json();
-                throw new Error(error.error || 'Upload initialization failed');
+                const errorText = await initResponse.text();
+                console.error('❌ Init response error:', errorText);
+                try {
+                    const error = JSON.parse(errorText);
+                    throw new Error(error.error || 'Upload initialization failed');
+                } catch (e) {
+                    throw new Error(`Upload initialization failed: ${initResponse.status} - ${errorText}`);
+                }
             }
             
             const { upload_id, session_id } = await initResponse.json();
             console.log('📋 Upload initialized:', { upload_id, session_id });
+            
+            // Update progress details
+            if (detailsElement) {
+                detailsElement.textContent = 'Starting 16MB chunked upload with 4 parallel streams...';
+            }
             
             // Step 2: Upload chunks in parallel
             const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
@@ -388,7 +413,7 @@ class VideoDetective {
                     <div id="streamingSpeed" class="progress-text">0 MB/s</div>
                 </div>
                 <div id="streamingDetails" class="upload-details">
-                    Initializing 16MB chunked upload with 4 parallel streams...
+                    Connecting to server...
                 </div>
             </div>
         `;
