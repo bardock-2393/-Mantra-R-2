@@ -1,268 +1,168 @@
 """
-Session Service for managing user sessions and conversation context
+Session Service Module
+Handles Redis session management and data storage
 """
 
 import json
 import uuid
-from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta
+import time
+import os
+from datetime import datetime
 import redis
+from config import Config
 
-from utils.logger import setup_logger
+# Configure Redis
+redis_client = redis.from_url(Config.REDIS_URL)
 
-logger = setup_logger(__name__)
+def generate_session_id():
+    """Generate unique session ID"""
+    return str(uuid.uuid4())
 
-class SessionService:
-    """Service for managing user sessions and conversation context"""
-    
-    def __init__(self, redis_client: redis.Redis):
-        self.redis_client = redis_client
-        self.session_timeout = 3600  # 1 hour in seconds
-        self.max_context_length = 50  # Maximum conversation history entries
-    
-    def create_session(self, session_id: str = None) -> Dict[str, Any]:
-        """Create a new session or get existing session"""
-        if not session_id:
-            session_id = str(uuid.uuid4())
+def store_session_data(session_id, data):
+    """Store session data in Redis"""
+    try:
+        # Convert complex data types to JSON strings for Redis storage
+        redis_data = {}
+        for key, value in data.items():
+            if isinstance(value, (list, dict)):
+                redis_data[key] = json.dumps(value)
+            else:
+                redis_data[key] = str(value)
         
-        # Check if session exists
-        session_data = self.get_session(session_id)
-        if session_data:
-            return session_data
-        
-        # Create new session
-        session_data = {
-            'session_id': session_id,
-            'created_at': datetime.now().isoformat(),
-            'last_activity': datetime.now().isoformat(),
-            'context': [],
-            'video_id': None,
-            'analysis_type': None,
-            'status': 'active'
-        }
-        
-        # Store in Redis
-        self._store_session(session_id, session_data)
-        
-        logger.info(f"Created new session: {session_id}")
-        return session_data
-    
-    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Get session data by session ID"""
-        try:
-            session_key = f"session:{session_id}"
-            session_data = self.redis_client.get(session_key)
+        redis_client.hset(f"session:{session_id}", mapping=redis_data)
+        redis_client.expire(f"session:{session_id}", Config.SESSION_EXPIRY)
+    except Exception as e:
+        print(f"Redis error: {e}")
+
+def get_session_data(session_id):
+    """Get session data from Redis"""
+    try:
+        data = redis_client.hgetall(f"session:{session_id}")
+        # Convert bytes to strings for Windows compatibility
+        decoded_data = {}
+        for key, value in data.items():
+            if isinstance(key, bytes):
+                key = key.decode('utf-8')
+            if isinstance(value, bytes):
+                value = value.decode('utf-8')
             
-            if session_data:
-                session = json.loads(session_data)
+            # Try to decode JSON strings back to original types
+            try:
+                if value.startswith('[') or value.startswith('{'):
+                    decoded_data[key] = json.loads(value)
+                else:
+                    decoded_data[key] = value
+            except (json.JSONDecodeError, AttributeError):
+                decoded_data[key] = value
                 
-                # Check if session is expired
-                last_activity = datetime.fromisoformat(session['last_activity'])
-                if datetime.now() - last_activity > timedelta(seconds=self.session_timeout):
-                    logger.info(f"Session expired: {session_id}")
-                    self.cleanup_session(session_id)
-                    return None
-                
-                # Update last activity
-                session['last_activity'] = datetime.now().isoformat()
-                self._store_session(session_id, session)
-                
-                return session
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error getting session {session_id}: {e}")
-            return None
-    
-    def update_session(self, session_id: str, session_data: Dict[str, Any]) -> bool:
-        """Update session data"""
-        try:
-            session_data['last_activity'] = datetime.now().isoformat()
-            self._store_session(session_id, session_data)
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error updating session {session_id}: {e}")
-            return False
-    
-    def add_message_to_context(self, session_id: str, user_message: str, assistant_response: str) -> bool:
-        """Add a message exchange to session context"""
-        try:
-            session = self.get_session(session_id)
-            if not session:
-                return False
-            
-            # Add new message to context
-            context_entry = {
-                'user': user_message,
-                'assistant': assistant_response,
-                'timestamp': datetime.now().isoformat()
-            }
-            
-            session['context'].append(context_entry)
-            
-            # Limit context length
-            if len(session['context']) > self.max_context_length:
-                session['context'] = session['context'][-self.max_context_length:]
-            
-            # Update session
-            return self.update_session(session_id, session)
-            
-        except Exception as e:
-            logger.error(f"Error adding message to context: {e}")
-            return False
-    
-    def set_video_context(self, session_id: str, video_id: str) -> bool:
-        """Set the video context for a session"""
-        try:
-            session = self.get_session(session_id)
-            if not session:
-                return False
-            
-            session['video_id'] = video_id
-            return self.update_session(session_id, session)
-            
-        except Exception as e:
-            logger.error(f"Error setting video context: {e}")
-            return False
-    
-    def set_analysis_type(self, session_id: str, analysis_type: str) -> bool:
-        """Set the analysis type for a session"""
-        try:
-            session = self.get_session(session_id)
-            if not session:
-                return False
-            
-            session['analysis_type'] = analysis_type
-            return self.update_session(session_id, session)
-            
-        except Exception as e:
-            logger.error(f"Error setting analysis type: {e}")
-            return False
-    
-    def get_session_context(self, session_id: str) -> List[Dict[str, Any]]:
-        """Get the conversation context for a session"""
-        try:
-            session = self.get_session(session_id)
-            if session:
-                return session.get('context', [])
-            return []
-            
-        except Exception as e:
-            logger.error(f"Error getting session context: {e}")
-            return []
-    
-    def cleanup_session(self, session_id: str) -> bool:
-        """Clean up a session"""
-        try:
-            session_key = f"session:{session_id}"
-            self.redis_client.delete(session_key)
-            logger.info(f"Cleaned up session: {session_id}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error cleaning up session {session_id}: {e}")
-            return False
-    
-    def cleanup_expired_sessions(self) -> int:
-        """Clean up all expired sessions"""
-        try:
-            cleaned_count = 0
-            pattern = "session:*"
-            
-            for key in self.redis_client.scan_iter(match=pattern):
-                try:
-                    session_data = self.redis_client.get(key)
-                    if session_data:
-                        session = json.loads(session_data)
-                        last_activity = datetime.fromisoformat(session['last_activity'])
-                        
-                        if datetime.now() - last_activity > timedelta(seconds=self.session_timeout):
-                            self.redis_client.delete(key)
-                            cleaned_count += 1
-                            
-                except Exception as e:
-                    logger.error(f"Error processing session key {key}: {e}")
-                    continue
-            
-            logger.info(f"Cleaned up {cleaned_count} expired sessions")
-            return cleaned_count
-            
-        except Exception as e:
-            logger.error(f"Error cleaning up expired sessions: {e}")
-            return 0
-    
-    def get_active_sessions(self) -> List[Dict[str, Any]]:
-        """Get all active sessions"""
-        try:
-            active_sessions = []
-            pattern = "session:*"
-            
-            for key in self.redis_client.scan_iter(match=pattern):
-                try:
-                    session_data = self.redis_client.get(key)
-                    if session_data:
-                        session = json.loads(session_data)
-                        last_activity = datetime.fromisoformat(session['last_activity'])
-                        
-                        if datetime.now() - last_activity <= timedelta(seconds=self.session_timeout):
-                            active_sessions.append(session)
-                            
-                except Exception as e:
-                    logger.error(f"Error processing session key {key}: {e}")
-                    continue
-            
-            return active_sessions
-            
-        except Exception as e:
-            logger.error(f"Error getting active sessions: {e}")
-            return []
-    
-    def get_session_stats(self) -> Dict[str, Any]:
-        """Get session statistics"""
-        try:
-            total_sessions = 0
-            active_sessions = 0
-            expired_sessions = 0
-            pattern = "session:*"
-            
-            for key in self.redis_client.scan_iter(match=pattern):
-                try:
-                    session_data = self.redis_client.get(key)
-                    if session_data:
-                        total_sessions += 1
-                        session = json.loads(session_data)
-                        last_activity = datetime.fromisoformat(session['last_activity'])
-                        
-                        if datetime.now() - last_activity <= timedelta(seconds=self.session_timeout):
-                            active_sessions += 1
-                        else:
-                            expired_sessions += 1
-                            
-                except Exception as e:
-                    logger.error(f"Error processing session key {key}: {e}")
-                    continue
-            
-            return {
-                'total_sessions': total_sessions,
-                'active_sessions': active_sessions,
-                'expired_sessions': expired_sessions,
-                'session_timeout_seconds': self.session_timeout
-            }
-            
-        except Exception as e:
-            logger.error(f"Error getting session stats: {e}")
-            return {}
-    
-    def _store_session(self, session_id: str, session_data: Dict[str, Any]):
-        """Store session data in Redis"""
-        session_key = f"session:{session_id}"
-        session_json = json.dumps(session_data)
+        return decoded_data
+    except Exception as e:
+        print(f"Redis error: {e}")
+        return {}
+
+def cleanup_session_data(session_id):
+    """Clean up all session data from Redis and delete uploaded files"""
+    try:
+        # Get session data to find uploaded files
+        session_data = get_session_data(session_id)
         
-        # Store with expiration
-        self.redis_client.setex(
-            session_key,
-            self.session_timeout,
-            session_json
-        ) 
+        # Delete uploaded video file
+        if session_data and 'filepath' in session_data:
+            video_path = session_data['filepath']
+            if os.path.exists(video_path):
+                try:
+                    os.remove(video_path)
+                    print(f"Deleted video file: {video_path}")
+                except Exception as e:
+                    print(f"Error deleting video file {video_path}: {e}")
+        
+        # Delete all screenshots and video clips for this session
+        upload_folder = Config.UPLOAD_FOLDER
+        if os.path.exists(upload_folder):
+            for filename in os.listdir(upload_folder):
+                if filename.startswith(f"screenshot_{session_id}_") or filename.startswith(f"clip_{session_id}_"):
+                    file_path = os.path.join(upload_folder, filename)
+                    try:
+                        os.remove(file_path)
+                        print(f"Deleted evidence file: {filename}")
+                    except Exception as e:
+                        print(f"Error deleting evidence file {filename}: {e}")
+        
+        # Delete session data from Redis
+        try:
+            redis_client.delete(f"session:{session_id}")
+            print(f"Deleted session data from Redis: {session_id}")
+        except Exception as e:
+            print(f"Error deleting session data from Redis: {e}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error during session cleanup: {e}")
+        return False
+
+def cleanup_expired_sessions():
+    """Clean up expired sessions (older than 1 hour)"""
+    try:
+        # Get all session keys from Redis
+        session_keys = redis_client.keys("session:*")
+        
+        for key in session_keys:
+            session_id = key.decode('utf-8').replace('session:', '')
+            
+            # Check if session is expired (older than 1 hour)
+            ttl = redis_client.ttl(key)
+            if ttl == -1:  # No expiration set, set it now
+                redis_client.expire(key, Config.SESSION_EXPIRY)
+            elif ttl == -2:  # Key doesn't exist
+                continue
+            elif ttl == 0:  # Expired, clean it up
+                cleanup_session_data(session_id)
+        
+        print("Expired sessions cleanup completed")
+        
+    except Exception as e:
+        print(f"Error during expired sessions cleanup: {e}")
+
+def cleanup_old_uploads():
+    """Clean up old upload files and evidence (older than 2 hours)"""
+    try:
+        upload_folder = Config.UPLOAD_FOLDER
+        if not os.path.exists(upload_folder):
+            return
+        
+        current_time = time.time()
+        cutoff_time = current_time - Config.UPLOAD_CLEANUP_TIME
+        
+        files_cleaned = 0
+        for filename in os.listdir(upload_folder):
+            file_path = os.path.join(upload_folder, filename)
+            
+            # Skip if not a file
+            if not os.path.isfile(file_path):
+                continue
+            
+            # Check file modification time
+            file_mtime = os.path.getmtime(file_path)
+            if file_mtime < cutoff_time:
+                try:
+                    os.remove(file_path)
+                    files_cleaned += 1
+                    print(f"Cleaned up old file: {filename}")
+                except Exception as e:
+                    print(f"Error deleting file {filename}: {e}")
+        
+        if files_cleaned > 0:
+            print(f"Cleaned up {files_cleaned} old files from uploads folder")
+        
+    except Exception as e:
+        print(f"Error during uploads cleanup: {e}")
+
+def get_all_session_keys():
+    """Get all session keys from Redis"""
+    try:
+        session_keys = redis_client.keys("session:*")
+        return [key.decode('utf-8').replace('session:', '') for key in session_keys]
+    except Exception as e:
+        print(f"Error getting session keys: {e}")
+        return [] 

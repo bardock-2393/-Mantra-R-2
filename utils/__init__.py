@@ -1,1 +1,1 @@
-# AI Video Detective Utils Package 
+# Utils package 

@@ -1,440 +1,609 @@
-# AI Video Detective - Advanced Multi-Modal Video Analysis
+# 🕵️ Visual Understanding Chat Assistant
 
-A distributed AI-powered video analysis system with real-time processing, multi-modal understanding, and sub-second query response times.
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
+[![Flask](https://img.shields.io/badge/Flask-2.3+-green.svg)](https://flask.palletsprojects.com/)
+[![Gemini AI](https://img.shields.io/badge/Gemini%20AI-API-orange.svg)](https://aistudio.google.com/)
+[![Redis](https://img.shields.io/badge/Redis-Cache-red.svg)](https://redis.io/)
+[![OpenCV](https://img.shields.io/badge/OpenCV-4.8+-purple.svg)](https://opencv.org/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## 🚀 Features
+> **Advanced Visual Understanding Chat Assistant** - An agentic AI system that processes video input, recognizes events, summarizes content, and engages in multi-turn conversations with context-aware understanding.
 
-- **Real-time Video Analysis**: Process videos up to 120 minutes at 90 FPS
-- **Multi-Modal Understanding**: Combined visual and audio analysis
-- **Sub-Second Queries**: < 1 second response times after video ingestion
-- **Distributed Architecture**: Local development + Remote GPU server
-- **Advanced AI Models**: LLaVA-NeXT-Video-7B, RT-DETR-v2, Whisper, Wav2Vec2
-- **Comprehensive Analysis Types**: Safety, Performance, Pattern Detection, Creative Review
-- **Modern Web Interface**: Real-time chat with AI assistant
-- **Event Timeline**: Detailed event tracking and visualization
+## 🚀 Live Demo & Video
+
+### **🌐 Live Application**
+Experience the Visual Understanding Chat Assistant in action:
+**[🔗 Try it now: mantra-r-1.deepsantoshwar.xyz/](https://mantra-r-1.deepsantoshwar.xyz/)**
+
+### **📺 Demo Video**
+Watch our comprehensive demo showcasing the system capabilities:
+
+[![Demo Video](https://img.shields.io/badge/YouTube-Watch%20Demo-red?style=for-the-badge&logo=youtube)](https://youtu.be/LNLOXMHwRxE)
+
+**Click the button above to watch the full demo video on YouTube**
+
+## 📋 Table of Contents
+
+- [🎯 Project Overview](#-project-overview)
+- [🏗️ Architecture](#️-architecture)
+- [🛠️ Tech Stack](#️-tech-stack)
+- [🚀 Quick Start](#-quick-start)
+- [📦 Installation](#-installation)
+- [💻 Usage](#-usage)
+- [🎬 Demo](#-demo)
+- [🔧 Configuration](#-configuration)
+- [🧪 Testing](#-testing)
+- [🤝 Contributing](#-contributing)
+
+## 🎯 Project Overview
+
+### **Problem Statement**
+Develop an agentic chat assistant for visual understanding that can process video input, recognize events, summarize content, and engage in multi-turn conversations. The system focuses on building a functional prototype that demonstrates core features without strict performance constraints.
+
+### **Core Features Implemented**
+
+#### **1. Video Event Recognition & Summarization**
+- **Video Stream Processing**: Accepts video input with maximum 2-minute duration
+- **Event Identification**: Recognizes specific events within video content
+- **Guideline Adherence Analysis**: Detects violations and compliance issues
+- **Intelligent Summarization**: Highlights key events with timestamps
+
+**Example Scenario**: Traffic scene analysis
+- Identifies vehicle movements, pedestrian crossings, traffic light changes
+- Summarizes violations: "Vehicle X ran a red light at timestamp Y"
+- Reports compliance issues: "Pedestrian crossed against signal at timestamp Z"
+
+#### **2. Multi-Turn Conversations**
+- **Context Retention**: Maintains conversation history across interactions
+- **Agentic Workflow**: Self-directed analysis and response generation
+- **Clarifying Questions**: Supports follow-up inquiries about events/summaries
+- **Coherent Responses**: Provides contextually relevant information
+
+#### **3. Video Input Processing**
+- **Format Support**: MP4, AVI, MOV, WMV, FLV
+- **Duration Limit**: Maximum 2-minute video processing
+- **Real-time Processing**: Stream-based video analysis
+- **Evidence Generation**: Automatic screenshots and video clips
+
+### **Innovation Highlights**
+- **Agentic Architecture**: Autonomous decision-making and analysis
+- **Multi-Modal Understanding**: Visual, temporal, and contextual comprehension
+- **Proactive Insights**: Beyond-request information and observations
+- **Adaptive Focus**: Dynamic response depth based on content complexity
 
 ## 🏗️ Architecture
 
-### Distributed System Design
+### **System Architecture Diagram**
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Local Development Environment            │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │   Web UI    │  │  Flask API  │  │   File Upload &     │ │
-│  │  (Port 8888)│  │ (Port 8080) │  │   Session Mgmt      │ │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              │ HTTP/WebSocket
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Remote GPU Server                        │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │   Redis     │  │   Ray       │  │   DuckDB            │ │
-│  │  Pub/Sub    │  │  Cluster    │  │   Events Store      │ │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
-│                                                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │ GPU 0-3     │  │ GPU 4       │  │ GPU 5               │ │
-│  │ Video Proc  │  │ Audio Proc  │  │ VLM (LLaVA)         │ │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-```
+<img width="1765" height="710" alt="image" src="https://github.com/user-attachments/assets/889cc49f-86e4-41f8-9c12-a7a30995aba6" />
 
-### GPU Allocation (7× A100 80GB)
 
-- **GPU 0-3**: Video processing (RT-DETR-v2, ByteTrack)
-- **GPU 4**: Audio processing (Whisper, Wav2Vec2)
-- **GPU 5**: VLM serving (LLaVA-NeXT-Video-7B)
-- **GPU 6**: Video encoding (NVENC)
+### **Component Interactions**
 
-## 📋 Requirements
+#### **1. Frontend Layer**
+- **Responsive UI**: Modern web interface with real-time chat
+- **Video Upload**: Drag-and-drop or file selection
+- **Chat Interface**: Multi-turn conversation support
+- **Evidence Display**: Screenshots and video clips presentation
 
-### System Requirements
+#### **2. Backend Layer**
+- **Flask Application**: RESTful API and web server
+- **Session Management**: Redis-backed conversation persistence
+- **File Processing**: Video upload and storage management
+- **Route Handling**: API endpoints and request processing
 
-- **Local Environment**: Any OS with Python 3.10+
-- **Remote GPU Server**: Ubuntu 22.04 with NVIDIA drivers
-- **GPU**: 7× NVIDIA A100 80GB (or equivalent)
-- **RAM**: 64GB+ recommended
-- **Storage**: 1TB+ SSD for video processing
+#### **3. AI Layer**
+- **Gemini AI Integration**: Advanced video understanding
+- **Event Recognition**: Automated event detection and classification
+- **Context Management**: Conversation history and context retention
+- **Response Generation**: Intelligent, contextual responses
 
-### Software Dependencies
+#### **4. Video Processing Pipeline**
+- **OpenCV Processing**: Video frame extraction and analysis
+- **Metadata Extraction**: Technical video information
+- **Evidence Generation**: Automatic screenshot and clip creation
+- **Quality Assessment**: Video quality and format validation
 
-- Python 3.10+
-- CUDA 12.7+
-- FFmpeg with NVIDIA codecs
-- Redis 6.0+
-- Docker (optional)
+## 🛠️ Tech Stack
 
-## 🛠️ Installation
+### **Backend Technology Justification**
 
-### 1. Clone the Repository
+#### **Flask Framework**
+- **Rationale**: Lightweight, flexible Python web framework
+- **AI/ML Suitability**: Excellent integration with Python ML libraries
+- **Scalability**: Modular architecture supports horizontal scaling
+- **Development Speed**: Rapid prototyping and development
+- **Community Support**: Extensive documentation and community
 
-```bash
-git clone <repository-url>
-cd ai_video_detective2
-```
+#### **Redis Cache**
+- **Rationale**: High-performance in-memory data store
+- **Session Management**: Fast conversation history storage
+- **Scalability**: Horizontal scaling with clustering
+- **Persistence**: Optional disk persistence for data durability
+- **Real-time**: Sub-millisecond response times
 
-### 2. Create Virtual Environment
+#### **OpenCV**
+- **Rationale**: Industry-standard computer vision library
+- **Video Processing**: Efficient frame extraction and manipulation
+- **Cross-platform**: Works on Windows, macOS, and Linux
+- **Performance**: Optimized C++ backend with Python bindings
+- **Rich Ecosystem**: Extensive documentation and examples
 
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+### **AI Model Selection**
 
-### 3. Install Dependencies
+#### **Google Gemini AI**
+- **Rationale**: State-of-the-art multimodal AI model
+- **Video Understanding**: Advanced video content comprehension
+- **Conversational AI**: Natural language processing capabilities
+- **Context Awareness**: Long-context window for multi-turn conversations
+- **API Integration**: Easy-to-use REST API with Python SDK
 
-```bash
-pip install -r requirements.txt
-```
+### **Additional Technologies**
 
-### 4. Environment Configuration
+#### **Python 3.8+**
+- **Rationale**: Primary language for AI/ML development
+- **Library Ecosystem**: Rich ecosystem of AI/ML libraries
+- **Community**: Large, active developer community
+- **Performance**: Optimized for numerical computing
 
-Create a `.env` file:
-
-```bash
-# Environment
-ENV=development
-DEBUG=true
-
-# Distributed Architecture
-IS_REMOTE_SERVER=false
-REMOTE_GPU_SERVER_URL=http://localhost:8001
-
-# GPU Configuration
-NUM_GPUS=7
-
-# Models
-LLAVA_MODEL=llava-hf/LLaVA-NeXT-Video-7B-hf
-WHISPER_MODEL=base
-
-# Processing
-WINDOW_SECONDS=20
-AUDIO_ENABLED=true
-
-# Storage
-LOCAL_UPLOAD_DIR=./static/uploads
-DUCKDB_PATH=./data/events.duckdb
-
-# Network
-LOCAL_PORTS=8888,8080,8000
-
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_DB=0
-
-# Analysis Types
-ANALYSIS_TYPES=comprehensive_analysis,safety_investigation,performance_analysis,pattern_detection,creative_review
-```
-
-### 5. Setup Directories
-
-```bash
-mkdir -p static/uploads temp data logs
-```
+#### **Werkzeug**
+- **Rationale**: WSGI utility library for Flask
+- **File Handling**: Secure file upload processing
+- **Security**: Built-in security features for web applications
 
 ## 🚀 Quick Start
 
-### Local Development Server
+### **Prerequisites**
+- Python 3.8 or higher
+- Redis server
+- Google Gemini API key
+- 2GB+ RAM
+- Stable internet connection
 
+### **1. Clone Repository**
 ```bash
-# Start local server (for development)
-python main.py --mode local --debug
-
-# Or with custom host/port
-python main.py --mode local --host 0.0.0.0 --port 8888 --debug
+git clone https://github.com/MantraHackathon/visual-understanding-chat-assistant.git
+cd visual-understanding-chat-assistant
 ```
 
-### Remote GPU Server
-
+### **2. Setup Environment**
 ```bash
-# Start remote GPU server
-python main.py --mode remote --host 0.0.0.0 --port 8001
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Start background worker
-python main.py --mode worker
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-### Using Gunicorn (Production)
+### **3. Configure API Keys**
+   ```bash
+# Create environment file
+   cp .env.example .env
 
-```bash
-# Local server
-gunicorn -w 4 -k gevent --bind 0.0.0.0:8888 app:create_app
-
-# Remote server
-gunicorn -w 4 -k gevent --bind 0.0.0.0:8001 app:create_app
+# Edit with your API key
+nano .env
 ```
 
-## 📖 Usage
+Add your Gemini API key:
+```env
+GOOGLE_API_KEY=your_gemini_api_key_here
+SECRET_KEY=your_secret_key_here
+```
 
-### 1. Access the Web Interface
+### **4. Start Services**
+```bash
+# Start Redis (if not running)
+redis-server
 
-Open your browser and navigate to:
-- **Local**: http://localhost:8888
-- **Remote**: http://your-server-ip:8888
+# Run the application
+python main.py
+```
 
-### 2. Upload a Video
+### **5. Access Application**
+Open your browser and visit: `http://localhost:5000`
 
-1. Drag and drop a video file or click to browse
-2. Supported formats: MP4, AVI, MOV, MKV, WebM, FLV
-3. Maximum file size: 1GB
+## 📦 Installation
 
-### 3. Select Analysis Type
+### **Detailed Setup Instructions**
 
-Choose from:
-- **Comprehensive Analysis**: Complete multi-dimensional analysis
-- **Safety Investigation**: Risk assessment and violation detection
-- **Performance Analysis**: Efficiency and optimization evaluation
-- **Pattern Detection**: Behavioral pattern recognition
-- **Creative Review**: Artistic and aesthetic analysis
+#### **System Requirements**
+- **Operating System**: Windows 10+, macOS 10.14+, or Ubuntu 18.04+
+- **Python**: 3.8 or higher
+- **Memory**: 2GB+ RAM (4GB+ recommended)
+- **Storage**: 1GB+ free space
+- **Network**: Stable internet connection for API calls
 
-### 4. Chat with AI
+#### **Dependencies Installation**
 
-Ask questions about the video:
-- "What safety violations do you see?"
-- "Analyze the performance of the workers"
-- "What patterns emerge in the behavior?"
-- "Evaluate the creative elements"
+```bash
+# Core Python packages
+pip install -r requirements.txt
+
+# Verify installation
+python -c "
+import flask, redis, google.generativeai, cv2
+print('✅ All dependencies installed successfully!')
+"
+```
+
+#### **Redis Setup**
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get update
+sudo apt-get install redis-server
+sudo systemctl start redis-server
+sudo systemctl enable redis-server
+```
+
+**macOS:**
+```bash
+brew install redis
+brew services start redis
+```
+
+**Windows:**
+```bash
+# Download from https://redis.io/download
+# Or use WSL2 with Ubuntu
+```
+
+#### **Environment Configuration**
+
+```bash
+# Create environment file
+cat > .env << EOF
+GOOGLE_API_KEY=your_gemini_api_key_here
+SECRET_KEY=your_secret_key_here
+REDIS_URL=redis://localhost:6379
+UPLOAD_FOLDER=static/uploads
+MAX_CONTENT_LENGTH=104857600
+EOF
+```
+
+#### **Get Gemini API Key**
+
+1. Visit [Google AI Studio](https://aistudio.google.com/)
+2. Sign in with your Google account
+3. Click "Create API Key"
+4. Copy the generated key
+5. Add it to your `.env` file
+
+## 💻 Usage
+
+### **Basic Usage**
+
+#### **1. Upload Video**
+- Click "Choose Video File" or drag-and-drop a video
+- Supported formats: MP4, AVI, MOV, WMV, FLV
+- Maximum duration: 2 minutes
+- Maximum size: 100MB
+
+#### **2. Start Analysis**
+- Select analysis type (Comprehensive, Safety, Performance, etc.)
+- Add focus area or specific questions
+- Click "Upload & Analyze"
+
+#### **3. Chat with AI**
+- Ask questions about the video content
+- Request clarification on events
+- Inquire about specific timestamps
+- Get detailed explanations
+
+### **Conversation Examples**
+
+#### **Traffic Scene Analysis**
+```
+User: "What traffic violations do you see in this video?"
+
+AI: "I've identified several traffic violations in the video:
+
+1. **Red Light Violation** (00:15): A blue sedan ran through a red traffic light at the intersection
+2. **Speeding Vehicle** (00:32): A motorcycle exceeded the speed limit in a school zone
+3. **Illegal Parking** (00:45): A delivery truck parked in a no-parking zone
+
+The video shows a busy intersection with multiple safety concerns..."
+
+User: "Can you tell me more about the red light violation?"
+
+AI: "Certainly! The red light violation occurred at timestamp 00:15:
+
+- **Vehicle**: Blue sedan (Toyota Camry, 2019-2021 model)
+- **Location**: Main Street and Oak Avenue intersection
+- **Violation**: Entered intersection 2.3 seconds after light turned red
+- **Severity**: High - could have caused a collision
+- **Context**: Heavy traffic conditions, school zone nearby
+
+This violation is particularly concerning because..."
+```
+
+#### **Workplace Safety Analysis**
+```
+User: "Analyze this workplace video for safety concerns."
+
+AI: "I've conducted a comprehensive safety analysis of the workplace video:
+
+**Critical Safety Violations:**
+1. **Missing PPE** (00:08): Worker operating machinery without safety goggles
+2. **Improper Lifting** (00:23): Employee lifting heavy object with incorrect posture
+3. **Blocked Emergency Exit** (00:41): Emergency exit partially blocked by equipment
+
+**Safety Recommendations:**
+- Immediate: Provide safety goggles to all workers
+- Short-term: Conduct proper lifting technique training
+- Long-term: Implement regular safety audits..."
+
+User: "What specific training should be provided?"
+
+AI: "Based on the safety violations observed, I recommend the following training programs:
+
+1. **PPE Training** (Immediate Priority):
+   - Proper selection and use of safety equipment
+   - Maintenance and inspection procedures
+   - Enforcement protocols
+
+2. **Ergonomics Training** (High Priority):
+   - Proper lifting techniques
+   - Body mechanics and posture
+   - Injury prevention strategies..."
+```
+
+### **Advanced Features**
+
+#### **Multi-Turn Context Retention**
+The system maintains conversation context across multiple interactions:
+
+```
+User: "What happened at 1:30 in the video?"
+AI: "At 1:30, I observed a pedestrian crossing the street..."
+
+User: "Was that person following the rules?"
+AI: "No, the pedestrian was not following the rules. At 1:30, they crossed against the 'Don't Walk' signal..."
+
+User: "What should they have done instead?"
+AI: "The pedestrian should have waited for the 'Walk' signal before crossing. The proper procedure would be..."
+```
+
+#### **Proactive Insights**
+The AI provides additional relevant information:
+
+```
+User: "Analyze this video for performance issues."
+
+AI: "I've identified several performance concerns:
+
+**Immediate Issues:**
+- Inefficient workflow at 00:15
+- Equipment downtime at 00:32
+
+**Proactive Observations:**
+- The current process could be optimized by 40% with better equipment placement
+- There's potential for automation in the repetitive tasks at 00:45
+- Team communication could be improved with visual signals..."
+```
+
+## 🎬 Demo
+
+### **Demo Video Features**
+Our demo video showcases:
+
+1. **Video Upload Process**
+   - Drag-and-drop functionality
+   - File validation and processing
+   - Progress indicators
+
+2. **Event Recognition**
+   - Real-time event detection
+   - Timestamp marking
+   - Violation identification
+
+3. **Multi-Turn Conversations**
+   - Context retention
+   - Follow-up questions
+   - Detailed explanations
+
+4. **Evidence Generation**
+   - Automatic screenshots
+   - Video clip extraction
+   - Evidence organization
+
+### **Demo Scenarios**
+- **Traffic Analysis**: Identifying violations and safety concerns
+- **Workplace Safety**: Detecting safety violations and recommendations
+- **Performance Review**: Analyzing efficiency and improvement opportunities
+- **Creative Content**: Evaluating artistic and technical quality
 
 ## 🔧 Configuration
 
-### Model Configuration
+### **Environment Variables**
+
+```env
+# Required
+GOOGLE_API_KEY=your_gemini_api_key_here
+SECRET_KEY=your_secret_key_here
+
+# Optional (with defaults)
+REDIS_URL=redis://localhost:6379
+UPLOAD_FOLDER=static/uploads
+MAX_CONTENT_LENGTH=104857600
+SESSION_EXPIRY=3600
+CLEANUP_INTERVAL=1800
+```
+
+### **Application Settings**
 
 ```python
 # config.py
-models = ModelConfig(
-    llava_model="llava-hf/LLaVA-NeXT-Video-7B-hf",
-    detection_model="RT-DETR-v2",
-    whisper_model="base",
-    tensorrt_enabled=True
-)
+class Config:
+    # File upload settings
+    MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB
+    UPLOAD_FOLDER = 'static/uploads'
+    ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'wmv', 'flv'}
+    
+    # Session settings
+    SESSION_EXPIRY = 3600  # 1 hour
+    CLEANUP_INTERVAL = 1800  # 30 minutes
+    
+    # AI settings
+    AI_TEMPERATURE = 0.7
+    AI_MAX_TOKENS = 4000
 ```
 
-### Processing Configuration
+## 🧪 Testing
 
-```python
-processing = ProcessingConfig(
-    target_fps=90,
-    window_seconds=20,
-    audio_enabled=True,
-    adaptive_sampling=True
-)
-```
-
-### GPU Configuration
-
-```python
-gpu = GPUConfig(
-    num_gpus=7,
-    gpu_memory_gb=80,
-    gpu_ids=[0, 1, 2, 3, 4, 5, 6]
-)
-```
-
-## 📊 Performance
-
-### Benchmarks
-
-- **Query Latency**: < 600ms (p50), < 950ms (p95)
-- **Video Processing**: 90 FPS sustained
-- **Long Videos**: 120 minutes supported
-- **Concurrent Users**: 10+ simultaneous sessions
-
-### Optimization Features
-
-- **Adaptive Sampling**: 6-24 FPS based on motion
-- **TensorRT Optimization**: FP16/INT8 inference
-- **Ray Distribution**: Multi-GPU parallel processing
-- **Redis Caching**: Real-time event streaming
-- **DuckDB**: Vectorized event queries
-
-## 🔍 Analysis Types
-
-### 1. Comprehensive Analysis
-
-Complete multi-dimensional analysis covering:
-- Visual elements and objects
-- Audio content and speech
-- Temporal structure and events
-- Spatial relationships
-- Behavioral patterns
-- Technical quality assessment
-
-### 2. Safety Investigation
-
-Expert safety analysis including:
-- Safety violations and risks
-- Regulatory compliance
-- Environmental hazards
-- Behavioral safety assessment
-- Emergency preparedness
-- Corrective action plans
-
-### 3. Performance Analysis
-
-Efficiency and optimization evaluation:
-- Process efficiency metrics
-- Quality assessment
-- Competency evaluation
-- Productivity analysis
-- Technical performance
-- Improvement opportunities
-
-### 4. Pattern Detection
-
-Advanced behavioral pattern recognition:
-- Movement patterns
-- Interaction patterns
-- Temporal patterns
-- Social dynamics
-- Anomaly detection
-- Predictive insights
-
-### 5. Creative Review
-
-Artistic and aesthetic analysis:
-- Visual aesthetics
-- Storytelling and narrative
-- Brand alignment
-- Creative execution
-- Emotional impact
-- Cultural relevance
-
-## 🛡️ Security
-
-### Access Control
-
-- IP whitelisting support
-- API key authentication (optional)
-- CORS configuration
-- File upload validation
-
-### Data Privacy
-
-- Local processing option
-- Encrypted storage
-- Session management
-- Audit logging
-
-## 🔧 Development
-
-### Project Structure
-
-```
-ai_video_detective2/
-├── app.py                 # Main Flask application
-├── main.py               # Entry point
-├── config.py             # Configuration management
-├── requirements.txt      # Python dependencies
-├── README.md            # This file
-├── services/            # Core services
-│   ├── ai_service.py    # AI/VLM processing
-│   ├── video_service.py # Video processing
-│   ├── audio_service.py # Audio processing
-│   ├── event_service.py # Event management
-│   └── session_service.py # Session management
-├── utils/               # Utilities
-│   └── logger.py        # Logging utilities
-├── templates/           # HTML templates
-│   └── index.html       # Main interface
-├── static/              # Static files
-│   ├── css/            # Stylesheets
-│   ├── js/             # JavaScript
-│   └── uploads/        # Uploaded videos
-└── data/               # Database and logs
-```
-
-### API Endpoints
-
-#### Video Management
-- `POST /api/upload` - Upload video file
-- `GET /api/videos/{id}/status` - Get processing status
-- `GET /api/videos/{id}/events` - Get video events
-- `GET /api/videos/{id}/clips` - Generate video clips
-
-#### Chat Interface
-- `POST /api/chat` - Send chat message
-- `WS /ws/chat` - WebSocket chat connection
-- `WS /ws/progress` - Processing progress updates
-
-#### Health & Status
-- `GET /health` - Health check
-- `GET /` - Main web interface
-
-### Adding New Analysis Types
-
-1. Define analysis template in `ai_service.py`
-2. Add analysis type to configuration
-3. Update frontend interface
-4. Test with sample videos
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-#### GPU Memory Errors
+### **Setup Testing**
 ```bash
-# Reduce batch size or model precision
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6
-export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+# Run comprehensive setup test
+python test_setup.py
 ```
 
-#### Redis Connection Issues
+### **Manual Testing**
 ```bash
-# Start Redis server
-redis-server --port 6379
+# Test video upload
+curl -X POST http://localhost:5000/upload \
+  -F "video=@test_video.mp4"
 
-# Test connection
+# Test analysis
+curl -X POST http://localhost:5000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"analysis_type": "comprehensive", "user_focus": "safety concerns"}'
+
+# Test chat
+curl -X POST http://localhost:5000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What events did you detect in the video?"}'
+```
+
+### **API Testing**
+```bash
+# Health check
+curl http://localhost:5000/health
+
+# Get analysis types
+curl http://localhost:5000/api/analysis-types
+
+# Get session status
+curl http://localhost:5000/session/status
+```
+
+## 🔍 Troubleshooting
+
+### **Common Issues**
+
+#### **1. Redis Connection Error**
+```bash
+# Error: Redis connection failed
+# Solution: Start Redis server
+redis-server
+
+# Check Redis status
 redis-cli ping
+# Should return: PONG
 ```
 
-#### FFmpeg Errors
+#### **2. Gemini API Errors**
 ```bash
-# Install NVIDIA codecs
-sudo apt-get install nvidia-cuda-toolkit
-ffmpeg -encoders | grep nvenc
+# Error: Invalid API key
+# Solution: Verify your API key
+echo $GOOGLE_API_KEY
+
+# Check API quota
+# Visit: https://aistudio.google.com/app/apikey
 ```
 
-### Logs and Debugging
-
+#### **3. Video Upload Issues**
 ```bash
-# View application logs
-tail -f logs/ai_video_detective_*.log
+# Error: File too large
+# Check file size limit in config.py
+# Default: 100MB
 
-# Enable debug mode
-export DEBUG=true
-python main.py --debug
+# Error: Unsupported format
+# Supported: MP4, AVI, MOV, WMV, FLV
+```
+
+#### **4. Session Issues**
+```bash
+# Clear browser cache and cookies
+# Restart the application
+python main.py
+
+# Check Redis connection
+redis-cli keys "*"
+```
+
+### **Debug Mode**
+```python
+# Enable debug mode for detailed errors
+app.run(debug=True, host='0.0.0.0', port=5000)
 ```
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
+### **Development Setup**
+```bash
+# Fork and clone the repository
+git clone https://github.com/MantraHackathon/visual-understanding-chat-assistant.git
+cd visual-understanding-chat-assistant
+
+# Create feature branch
+git checkout -b feature/amazing-feature
+
+# Make your changes
+# Add tests if applicable
+
+# Commit and push
+git commit -m "Add amazing feature"
+git push origin feature/amazing-feature
+
+# Create pull request
+```
+
+### **Code Style**
+- Follow PEP 8 Python style guide
+- Add docstrings to functions
+- Include type hints where appropriate
+- Write tests for new features
+
+### **Testing**
+```bash
+# Run tests
+python -m pytest tests/
+
+# Check code coverage
+pip install coverage
+coverage run -m pytest
+coverage report
+```
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## 🆘 Support
 
-- **LLaVA Team**: For the excellent video understanding model
-- **Ultralytics**: For RT-DETR-v2 object detection
-- **OpenAI**: For Whisper speech recognition
-- **Ray Team**: For distributed computing framework
-- **DuckDB Team**: For high-performance analytics database
+### **Getting Help**
+- 📖 **Documentation**: Check this README and STARTUP_GUIDE.md
+- 🐛 **Issues**: Report bugs on GitHub Issues
+- 💬 **Discussions**: Join our community discussions
+- 📧 **Email**: Contact us directly
 
-## 📞 Support
-
-For support and questions:
-- Create an issue on GitHub
-- Check the documentation
-- Review troubleshooting guide
+### **Useful Resources**
+- [Flask Documentation](https://flask.palletsprojects.com/)
+- [Google Gemini API Docs](https://ai.google.dev/docs)
+- [Redis Documentation](https://redis.io/documentation)
+- [OpenCV Documentation](https://opencv.org/)
 
 ---
 
-**AI Video Detective** - Advanced Multi-Modal Video Analysis with Real-time AI 
+<div align="center">
+
+**Visual Understanding Chat Assistant** - Advanced AI-powered video analysis with multi-turn conversations
+
+[![GitHub stars](https://img.shields.io/github/stars/MantraHackathon/visual-understanding-chat-assistant?style=social)](https://github.com/MantraHackathon/visual-understanding-chat-assistant)
+[![GitHub forks](https://img.shields.io/github/forks/MantraHackathon/visual-understanding-chat-assistant?style=social)](https://github.com/MantraHackathon/visual-understanding-chat-assistant)
+[![GitHub issues](https://img.shields.io/github/issues/MantraHackathon/visual-understanding-chat-assistant)](https://github.com/MantraHackathon/visual-understanding-chat-assistant/issues)
+
+**Built with ❤️ for the Mantra Hackathon**
+
+</div> 

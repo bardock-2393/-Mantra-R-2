@@ -1,700 +1,301 @@
 """
-AI Service for Video Analysis
-Handles VLM processing, query understanding, and response generation
+AI Service Module
+Handles Gemma 3 model interactions and analysis functionality
 """
 
-import os
-import json
 import asyncio
-from typing import Dict, List, Any, Optional
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
-import sglang as sgl
-from sglang import Runtime
-from sglang.lang.chat_template import get_chat_template
-import redis
-from datetime import datetime
+from transformers import AutoProcessor, Gemma3ForConditionalGeneration, pipeline
+from PIL import Image
+import cv2
+import os
+import tempfile
+from config import Config
+from analysis_templates import generate_analysis_prompt
 
-from config import config
-from utils.logger import setup_logger
+# Initialize Gemma 3 model
+model_id = "google/gemma-3-12b-it"
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
-logger = setup_logger(__name__)
+# Global variables for model and processor (lazy loading)
+model = None
+processor = None
 
-class AIService:
-    """AI Service for video analysis and query processing"""
-    
-    def __init__(self, config):
-        self.config = config
-        self.redis_client = redis.Redis(**config.get_redis_config())
-        
-        # Initialize VLM
-        self._init_vlm()
-        
-        # Initialize analysis templates
-        self._load_analysis_templates()
-        
-        logger.info("AI Service initialized successfully")
-    
-    def _init_vlm(self):
-        """Initialize the VLM (LLaVA-NeXT-Video-7B) with SGLang"""
-        # Check if VLM is disabled via environment variable
-        if os.getenv("DISABLE_VLM", "false").lower() == "true":
-            logger.info("VLM disabled via environment variable")
-            logger.info("Running in fallback mode without VLM capabilities")
-            self.vlm_available = False
-            self.runtime = None
-            return
-        
+def initialize_model():
+    """Initialize Gemma 3 model and processor"""
+    global model, processor
+    if model is None:
+        print("Loading Gemma 3 model...")
         try:
-            # Load LLaVA-NeXT-Video-7B model
-            model_path = self.config.models.llava_model
-            device = self.config.models.llava_device
-            
-            logger.info(f"Loading VLM model: {model_path} on {device}")
-            
-            # Create the backend runtime with the model
-            self.runtime = sgl.Runtime(model_path=model_path)
-            
-            # Set the chat template for LLaVA models
-            self.runtime.endpoint.chat_template = get_chat_template("llama-3-instruct-llava")
-            
-            # Set as default backend
-            sgl.set_default_backend(self.runtime)
-            
-            self.vlm_available = True
-            logger.info("VLM model loaded successfully")
-            
-        except ImportError as e:
-            logger.warning(f"VLM dependencies not available: {e}")
-            logger.info("Running in fallback mode without VLM capabilities")
-            self.vlm_available = False
-            self.runtime = None
-            
-        except OSError as e:
-            if "undefined symbol" in str(e) or "sgl_kernel" in str(e):
-                logger.warning(f"SGLang compatibility issue detected: {e}")
-                logger.info("This is likely due to PyTorch version incompatibility with SGLang")
-                logger.info("Running in fallback mode without VLM capabilities")
-                self.vlm_available = False
-                self.runtime = None
-            else:
-                logger.error(f"OS Error initializing VLM: {e}")
-                self.vlm_available = False
-                self.runtime = None
-                
+            model = Gemma3ForConditionalGeneration.from_pretrained(
+                model_id, 
+                device_map="auto",
+                torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32
+            ).eval()
+            processor = AutoProcessor.from_pretrained(model_id)
+            print("Gemma 3 model loaded successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize VLM: {e}")
-            logger.info("Running in fallback mode without VLM capabilities")
-            self.vlm_available = False
-            self.runtime = None
+            print(f"Error loading Gemma 3 model: {e}")
+            # Fallback to CPU and float32 if CUDA/bfloat16 fails
+            model = Gemma3ForConditionalGeneration.from_pretrained(
+                model_id, 
+                device_map="cpu",
+                torch_dtype=torch.float32
+            ).eval()
+            processor = AutoProcessor.from_pretrained(model_id)
+            print("Gemma 3 model loaded with CPU fallback")
+
+def extract_video_frames(video_path, num_frames=10):
+    """Extract frames from video for analysis"""
+    cap = cv2.VideoCapture(video_path)
+    frames = []
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    duration = frame_count / fps if fps > 0 else 0
     
-    def _load_analysis_templates(self):
-        """Load analysis templates for different analysis types"""
-        self.analysis_templates = {
-            "comprehensive_analysis": """
-You are an advanced AI video analysis agent with comprehensive understanding capabilities. Your mission is to provide a complete, autonomous analysis of this video content. Focus on: {user_focus}
+    # Calculate frame indices to extract evenly distributed frames
+    frame_indices = [int(i * frame_count / num_frames) for i in range(num_frames)]
+    
+    timestamps = []
+    for i, frame_idx in enumerate(frame_indices):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+        ret, frame = cap.read()
+        if ret:
+            # Convert BGR to RGB
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # Convert to PIL Image
+            pil_image = Image.fromarray(frame_rgb)
+            frames.append(pil_image)
+            # Calculate timestamp
+            timestamp = frame_idx / fps if fps > 0 else 0
+            timestamps.append(timestamp)
+    
+    cap.release()
+    return frames, timestamps, duration
+
+async def analyze_video_with_gemini(video_path, analysis_type, user_focus):
+    """Analyze video using Gemma 3 model with enhanced agentic capabilities"""
+    try:
+        # Initialize model if not already loaded
+        initialize_model()
+        
+        # Generate analysis prompt based on type and user focus
+        analysis_prompt = generate_analysis_prompt(analysis_type, user_focus)
+        
+        # Extract frames from video
+        print('Extracting frames from video...')
+        frames, timestamps, duration = extract_video_frames(video_path, num_frames=10)
+        
+        if not frames:
+            raise ValueError("No frames could be extracted from the video")
+        
+        print(f'Extracted {len(frames)} frames from video (duration: {duration:.2f}s)')
+        
+        # Enhanced agentic system prompt for superior analysis quality
+        agent_system_prompt = f"""
+You are an **exceptional AI video analysis agent** with unparalleled understanding capabilities. Your mission is to provide **comprehensive, precise, and insightful analysis** that serves as the foundation for high-quality user interactions.
 
 ## AGENT ANALYSIS PROTOCOL
 
-### 1. EXECUTIVE SUMMARY
-- **Overall Assessment**: Provide a high-level evaluation of the video content
-- **Key Findings**: Highlight the most significant discoveries and insights
-- **Content Classification**: Categorize the video type and primary purpose
-- **Critical Observations**: Note any exceptional or concerning elements
-
-### 2. DETAILED CONTENT ANALYSIS
-- **Visual Elements**: Describe all visual components, objects, people, environments
-- **Audio Analysis**: Identify sounds, speech, music, ambient noise
-- **Temporal Structure**: Break down the video timeline and sequence of events
-- **Spatial Understanding**: Analyze spatial relationships and movements
-- **Contextual Information**: Identify location, time, setting, and circumstances
-
-### 3. BEHAVIORAL & INTERACTION ANALYSIS
-- **Human Behavior**: Analyze actions, gestures, expressions, interactions
-- **Pattern Recognition**: Identify recurring behaviors, sequences, or trends
-- **Social Dynamics**: Understand relationships, communication patterns, group dynamics
-- **Emotional Content**: Assess emotional states, mood, and atmosphere
-
-### 4. TECHNICAL & QUALITY ASSESSMENT
-- **Production Quality**: Evaluate video/audio quality, lighting, composition
-- **Technical Specifications**: Analyze resolution, frame rate, encoding quality
-- **Professional Standards**: Assess adherence to industry best practices
-- **Technical Issues**: Identify any quality problems or technical concerns
-
-### 5. SAFETY & COMPLIANCE EVALUATION
-- **Safety Assessment**: Identify potential safety risks or violations
-- **Regulatory Compliance**: Check for adherence to relevant standards
-- **Risk Analysis**: Evaluate probability and severity of identified risks
-- **Recommendations**: Provide actionable safety improvements
-
-### 6. PERFORMANCE & EFFICIENCY ANALYSIS
-- **Efficiency Metrics**: Assess productivity, workflow, and optimization opportunities
-- **Performance Indicators**: Identify key performance measures and benchmarks
-- **Process Analysis**: Evaluate procedures, workflows, and methodologies
-- **Improvement Opportunities**: Suggest enhancements and optimizations
-
-### 7. CREATIVE & AESTHETIC EVALUATION
-- **Creative Elements**: Analyze artistic choices, design, and aesthetics
-- **Brand Alignment**: Assess consistency with brand identity and messaging
-- **Engagement Factors**: Identify elements that enhance viewer engagement
-- **Creative Recommendations**: Suggest improvements for visual appeal
-
-### 8. CONTEXTUAL & CULTURAL ANALYSIS
-- **Cultural Context**: Understand cultural references, norms, and implications
-- **Historical Context**: Place content in relevant historical or temporal context
-- **Social Impact**: Assess potential social implications and effects
-- **Ethical Considerations**: Evaluate ethical aspects and implications
-
-### 9. ACTIONABLE INSIGHTS & RECOMMENDATIONS
-- **Priority Actions**: List immediate actions needed based on findings
-- **Strategic Recommendations**: Provide long-term improvement suggestions
-- **Resource Requirements**: Identify resources needed for implementation
-- **Success Metrics**: Define how to measure improvement success
-
-### 10. COMPREHENSIVE SUMMARY
-- **Key Takeaways**: Summarize the most important findings
-- **Risk Assessment**: Overall risk level and priority concerns
-- **Opportunity Analysis**: Identify positive opportunities and strengths
-- **Next Steps**: Clear action plan for moving forward
-
-## AGENT RESPONSE GUIDELINES
-- Be thorough and comprehensive in your analysis
-- Provide specific, actionable insights
-- Use clear, professional language
-- Include relevant timestamps when applicable
-- Maintain objectivity while being insightful
-- Consider multiple perspectives and interpretations
-- Provide evidence-based conclusions
-- Offer practical, implementable recommendations
-
-Format your response with clear headings, bullet points, and structured sections for maximum clarity and usability.
-""",
-            
-            "safety_investigation": """
-You are an expert safety investigation agent with advanced risk assessment capabilities. Conduct a thorough safety analysis focusing on: {user_focus}
-
-## SAFETY INVESTIGATION PROTOCOL
-
-### 1. EXECUTIVE SAFETY SUMMARY
-- **Overall Risk Level**: Critical/High/Medium/Low assessment
-- **Immediate Concerns**: Urgent safety issues requiring immediate attention
-- **Safety Score**: Numerical safety rating (1-10 scale)
-- **Priority Actions**: Most critical safety interventions needed
-
-### 2. DETAILED SAFETY VIOLATIONS
-- **Specific Violations**: List each safety violation with timestamps
-- **Severity Classification**: Critical/High/Medium/Low for each violation
-- **Regulatory Compliance**: Identify specific safety standards violated
-- **Violation Patterns**: Identify recurring safety issues
-
-### 3. ENVIRONMENTAL HAZARD ANALYSIS
-- **Physical Hazards**: Identify all environmental safety risks
-- **Equipment Safety**: Assess safety of tools, machinery, and equipment
-- **Environmental Conditions**: Evaluate weather, lighting, and environmental factors
-- **Infrastructure Safety**: Assess building, facility, and structural safety
-
-### 4. BEHAVIORAL SAFETY ASSESSMENT
-- **Unsafe Behaviors**: Document all unsafe actions and practices
-- **Risk-Taking Actions**: Identify dangerous or reckless behaviors
-- **Safety Protocol Violations**: Note failures to follow safety procedures
-- **Human Factor Analysis**: Assess human error and decision-making factors
-
-### 5. EMERGENCY PREPAREDNESS EVALUATION
-- **Emergency Response Readiness**: Assess preparedness for emergencies
-- **Evacuation Procedures**: Evaluate evacuation planning and execution
-- **First Aid Capabilities**: Assess medical response capabilities
-- **Communication Protocols**: Evaluate emergency communication systems
-
-### 6. RISK ASSESSMENT MATRIX
-- **Probability vs. Impact Analysis**: Detailed risk matrix for all identified hazards
-- **Risk Mitigation Strategies**: Specific strategies to reduce each risk
-- **Priority Risk Ranking**: Ordered list of risks by priority
-- **Resource Requirements**: Resources needed for risk mitigation
-
-### 7. COMPLIANCE & REGULATORY ANALYSIS
-- **Regulatory Framework**: Identify applicable safety regulations
-- **Compliance Status**: Current compliance level assessment
-- **Gap Analysis**: Identify compliance gaps and deficiencies
-- **Regulatory Recommendations**: Steps to achieve full compliance
-
-### 8. SAFETY CULTURE ASSESSMENT
-- **Safety Awareness**: Evaluate overall safety consciousness
-- **Leadership Commitment**: Assess management safety commitment
-- **Employee Engagement**: Evaluate worker safety participation
-- **Continuous Improvement**: Assess safety improvement processes
-
-### 9. CORRECTIVE ACTION PLAN
-- **Immediate Actions**: Actions required within 24-48 hours
-- **Short-term Improvements**: Actions needed within 1-4 weeks
-- **Long-term Enhancements**: Strategic safety improvements
-- **Implementation Timeline**: Detailed schedule for all actions
-
-### 10. SAFETY MONITORING & FOLLOW-UP
-- **Key Performance Indicators**: Metrics to track safety improvement
-- **Monitoring Procedures**: How to track progress and compliance
-- **Review Schedule**: Regular safety review and assessment timeline
-- **Continuous Improvement**: Ongoing safety enhancement processes
-
-## SAFETY AGENT GUIDELINES
-- Prioritize human safety above all other considerations
-- Be specific and actionable in all recommendations
-- Provide evidence-based safety assessments
-- Consider both immediate and long-term safety implications
-- Maintain professional objectivity while emphasizing urgency where appropriate
-- Include specific timestamps and locations for all safety issues
-- Provide clear, step-by-step corrective actions
-- Consider regulatory and legal implications of safety findings
-
-Format your response with clear safety categories, severity indicators, and actionable recommendations.
-""",
-            
-            "performance_analysis": """
-You are an expert performance analysis agent specializing in efficiency, quality, and optimization. Conduct a comprehensive performance evaluation focusing on: {user_focus}
-
-## PERFORMANCE ANALYSIS PROTOCOL
-
-### 1. EXECUTIVE PERFORMANCE SUMMARY
-- **Overall Performance Rating**: Excellent/Good/Average/Poor assessment
-- **Key Performance Indicators**: Primary metrics and measurements
-- **Performance Score**: Numerical performance rating (1-10 scale)
-- **Critical Success Factors**: Most important performance drivers
-
-### 2. EFFICIENCY ANALYSIS
-- **Process Efficiency**: Evaluate workflow and process optimization
-- **Time Management**: Assess time utilization and productivity
-- **Resource Utilization**: Analyze resource allocation and efficiency
-- **Waste Identification**: Identify inefficiencies and waste areas
-
-### 3. QUALITY ASSESSMENT
-- **Output Quality**: Evaluate the quality of deliverables and results
-- **Consistency**: Assess consistency in performance and output
-- **Accuracy**: Measure accuracy and precision of work
-- **Reliability**: Evaluate dependability and reliability factors
-
-### 4. COMPETENCY EVALUATION
-- **Skill Assessment**: Evaluate technical and professional skills
-- **Knowledge Application**: Assess how well knowledge is applied
-- **Problem-Solving**: Analyze problem-solving capabilities
-- **Adaptability**: Evaluate ability to adapt to changing circumstances
-
-### 5. PRODUCTIVITY METRICS
-- **Output Volume**: Measure quantity of work produced
-- **Speed Metrics**: Assess speed and timeliness of delivery
-- **Throughput Analysis**: Evaluate overall system throughput
-- **Capacity Utilization**: Assess capacity and capability usage
-
-### 6. BEHAVIORAL PERFORMANCE
-- **Work Habits**: Analyze work patterns and behaviors
-- **Collaboration**: Evaluate teamwork and cooperation
-- **Communication**: Assess communication effectiveness
-- **Leadership**: Evaluate leadership and initiative qualities
-
-### 7. TECHNICAL PERFORMANCE
-- **Technical Proficiency**: Assess technical skill level
-- **Tool Usage**: Evaluate effective use of tools and technology
-- **Methodology**: Analyze approach and methodology effectiveness
-- **Innovation**: Assess creativity and innovation in work
-
-### 8. COMPARATIVE ANALYSIS
-- **Benchmark Comparison**: Compare against industry standards
-- **Historical Performance**: Assess performance trends over time
-- **Peer Comparison**: Compare against similar performers
-- **Best Practice Alignment**: Evaluate alignment with best practices
-
-### 9. IMPROVEMENT OPPORTUNITIES
-- **Performance Gaps**: Identify areas needing improvement
-- **Optimization Opportunities**: Find ways to enhance performance
-- **Training Needs**: Identify skill development requirements
-- **Process Improvements**: Suggest workflow enhancements
-
-### 10. PERFORMANCE ACTION PLAN
-- **Immediate Improvements**: Quick wins and immediate enhancements
-- **Short-term Goals**: 30-90 day improvement objectives
-- **Long-term Development**: Strategic performance enhancement plan
-- **Success Metrics**: How to measure improvement success
-
-## PERFORMANCE AGENT GUIDELINES
-- Focus on measurable and actionable performance insights
-- Provide specific, data-driven recommendations
-- Consider both individual and systemic performance factors
-- Balance quantitative metrics with qualitative observations
-- Maintain objectivity while being constructive
-- Include specific examples and evidence for all assessments
-- Provide clear, achievable improvement steps
-- Consider the context and constraints of the performance environment
-
-Format your response with clear performance categories, specific metrics, and actionable improvement recommendations.
-""",
-            
-            "pattern_detection": """
-You are an advanced pattern detection agent with sophisticated behavioral analysis capabilities. Conduct comprehensive pattern recognition focusing on: {user_focus}
-
-## PATTERN DETECTION PROTOCOL
-
-### 1. EXECUTIVE PATTERN SUMMARY
-- **Primary Patterns Identified**: Key recurring patterns and behaviors
-- **Pattern Significance**: Importance and implications of each pattern
-- **Pattern Categories**: Classification of different pattern types
-- **Anomaly Detection**: Unusual or unexpected behaviors identified
-
-### 2. BEHAVIORAL PATTERN ANALYSIS
-- **Movement Patterns**: Analyze physical movement and positioning patterns
-- **Interaction Patterns**: Identify communication and interaction behaviors
-- **Decision-Making Patterns**: Analyze choice and decision patterns
-- **Response Patterns**: Evaluate reaction and response behaviors
-
-### 3. TEMPORAL PATTERN RECOGNITION
-- **Timing Patterns**: Identify time-based behavioral patterns
-- **Sequence Analysis**: Analyze order and sequence of events
-- **Frequency Patterns**: Assess how often behaviors occur
-- **Duration Patterns**: Analyze how long behaviors persist
-
-### 4. SPATIAL PATTERN ANALYSIS
-- **Location Patterns**: Identify spatial positioning and movement patterns
-- **Proximity Patterns**: Analyze distance and proximity relationships
-- **Territorial Behavior**: Assess territorial and boundary patterns
-- **Environmental Interaction**: Analyze interaction with physical environment
-
-### 5. SOCIAL PATTERN DETECTION
-- **Group Dynamics**: Analyze group behavior and social interactions
-- **Hierarchy Patterns**: Identify power and authority relationships
-- **Communication Patterns**: Analyze verbal and non-verbal communication
-- **Social Networks**: Map social connections and relationships
-
-### 6. COGNITIVE PATTERN ANALYSIS
-- **Thinking Patterns**: Analyze cognitive and decision-making processes
-- **Problem-Solving Patterns**: Identify approach to challenges and problems
-- **Learning Patterns**: Assess how information is processed and retained
-- **Adaptation Patterns**: Evaluate how behaviors change over time
-
-### 7. EMOTIONAL PATTERN RECOGNITION
-- **Emotional Responses**: Identify emotional reaction patterns
-- **Mood Patterns**: Analyze mood variations and cycles
-- **Stress Patterns**: Assess stress response and coping mechanisms
-- **Motivation Patterns**: Evaluate what drives behavior and engagement
-
-### 8. CULTURAL PATTERN ANALYSIS
-- **Cultural Behaviors**: Identify culturally influenced patterns
-- **Social Norms**: Analyze adherence to social expectations
-- **Cultural Adaptation**: Assess how cultural factors influence behavior
-- **Cross-Cultural Patterns**: Compare patterns across different contexts
-
-### 9. ANOMALY DETECTION
-- **Outlier Identification**: Identify behaviors that deviate from patterns
-- **Anomaly Classification**: Categorize different types of anomalies
-- **Anomaly Significance**: Assess importance and implications of anomalies
-- **Pattern Disruptions**: Identify what causes pattern changes
-
-### 10. PATTERN IMPLICATIONS & APPLICATIONS
-- **Predictive Value**: How patterns can predict future behavior
-- **Intervention Opportunities**: Where patterns suggest intervention points
-- **Optimization Potential**: How patterns can be leveraged for improvement
-- **Risk Assessment**: How patterns relate to potential risks or opportunities
-
-## PATTERN DETECTION GUIDELINES
-- Focus on identifying meaningful and actionable patterns
-- Provide evidence-based pattern recognition
-- Consider both individual and group pattern dynamics
-- Analyze patterns in their broader context and significance
-- Maintain objectivity while recognizing pattern importance
-- Include specific examples and timestamps for patterns
-- Consider cultural and contextual factors in pattern analysis
-- Provide actionable insights based on pattern recognition
-
-Format your response with clear pattern categories, specific examples, and meaningful insights about behavioral implications.
-""",
-            
-            "creative_review": """
-You are an expert creative review agent with deep understanding of artistic, aesthetic, and creative elements. Conduct a comprehensive creative analysis focusing on: {user_focus}
-
-## CREATIVE REVIEW PROTOCOL
-
-### 1. EXECUTIVE CREATIVE SUMMARY
-- **Overall Creative Quality**: Exceptional/Good/Average/Poor assessment
-- **Creative Vision**: Identify the underlying creative concept and vision
-- **Creative Score**: Numerical creative rating (1-10 scale)
-- **Artistic Merit**: Assessment of artistic value and significance
-
-### 2. VISUAL AESTHETICS ANALYSIS
-- **Composition**: Analyze visual composition and framing
-- **Color Theory**: Evaluate color choices, palettes, and color psychology
-- **Lighting**: Assess lighting design and its impact on mood
-- **Visual Hierarchy**: Analyze how visual elements guide attention
-
-### 3. STORYTELLING & NARRATIVE
-- **Narrative Structure**: Analyze story structure and flow
-- **Character Development**: Evaluate character portrayal and development
-- **Emotional Arc**: Assess emotional journey and impact
-- **Message Delivery**: Analyze how effectively the message is conveyed
-
-### 4. TECHNICAL CREATIVE EXECUTION
-- **Production Quality**: Evaluate technical execution and polish
-- **Cinematography**: Analyze camera work and visual techniques
-- **Editing**: Assess editing choices and pacing
-- **Sound Design**: Evaluate audio design and its creative contribution
-
-### 5. BRAND & MESSAGING ALIGNMENT
-- **Brand Consistency**: Assess alignment with brand identity
-- **Message Clarity**: Evaluate how clearly the intended message is communicated
-- **Target Audience Appeal**: Analyze effectiveness for target demographic
-- **Brand Differentiation**: Assess how well it differentiates from competitors
-
-### 6. INNOVATION & CREATIVITY
-- **Originality**: Evaluate uniqueness and creative originality
-- **Innovation**: Assess use of new or creative approaches
-- **Risk-Taking**: Analyze willingness to take creative risks
-- **Creative Problem-Solving**: Evaluate creative solutions to challenges
-
-### 7. EMOTIONAL & PSYCHOLOGICAL IMPACT
-- **Emotional Resonance**: Analyze emotional connection and impact
-- **Psychological Appeal**: Assess psychological factors and appeal
-- **Memorability**: Evaluate how memorable and impactful the content is
-- **Engagement Factor**: Analyze viewer engagement and interest
-
-### 8. CULTURAL & CONTEXTUAL RELEVANCE
-- **Cultural Sensitivity**: Assess cultural appropriateness and sensitivity
-- **Contemporary Relevance**: Evaluate relevance to current cultural context
-- **Timelessness**: Assess whether content has lasting appeal
-- **Cultural Impact**: Analyze potential cultural influence and significance
-
-### 9. COMPETITIVE ANALYSIS
-- **Industry Comparison**: Compare against industry standards and competitors
-- **Trend Alignment**: Assess alignment with current creative trends
-- **Market Position**: Evaluate competitive positioning and differentiation
-- **Best Practice Alignment**: Assess alignment with creative best practices
-
-### 10. CREATIVE RECOMMENDATIONS
-- **Immediate Improvements**: Quick creative enhancements
-- **Strategic Enhancements**: Long-term creative development
-- **Innovation Opportunities**: Areas for creative innovation
-- **Success Metrics**: How to measure creative success
-
-## CREATIVE REVIEW GUIDELINES
-- Focus on artistic merit and creative excellence
-- Provide constructive, actionable creative feedback
-- Consider both technical and artistic aspects
-- Balance subjective appreciation with objective analysis
-- Maintain sensitivity to creative intent and vision
-- Include specific examples and evidence for all assessments
-- Provide clear, achievable creative improvement steps
-- Consider the creative context and intended audience
-
-Format your response with clear creative categories, specific artistic observations, and actionable creative recommendations.
-"""
-        }
-    
-    def process_query(self, message: str, video_id: str = None, session_context: List[Dict] = None) -> Dict[str, Any]:
-        """Process a user query and generate a response"""
-        try:
-            # Determine analysis type from message
-            analysis_type = self._determine_analysis_type(message)
-            
-            # Get relevant events and evidence
-            events = self._get_relevant_events(video_id, message) if video_id else []
-            
-            # Build context from session history
-            context = self._build_context(session_context or [])
-            
-            # Generate response using VLM
-            response = self._generate_response(
-                message=message,
-                analysis_type=analysis_type,
-                events=events,
-                context=context,
-                video_id=video_id
-            )
-            
-            return {
-                'answer': response,
-                'analysis_type': analysis_type,
-                'events_used': len(events),
-                'timestamp': datetime.now().isoformat()
-            }
-            
-        except Exception as e:
-            logger.error(f"Error processing query: {e}")
-            return {
-                'error': f'Processing error: {str(e)}',
-                'timestamp': datetime.now().isoformat()
-            }
-    
-    def _determine_analysis_type(self, message: str) -> str:
-        """Determine the analysis type from the user message"""
-        message_lower = message.lower()
-        
-        # Safety-related keywords
-        safety_keywords = ['safety', 'risk', 'danger', 'hazard', 'violation', 'unsafe', 'accident']
-        if any(keyword in message_lower for keyword in safety_keywords):
-            return "safety_investigation"
-        
-        # Performance-related keywords
-        performance_keywords = ['performance', 'efficiency', 'productivity', 'quality', 'optimization']
-        if any(keyword in message_lower for keyword in performance_keywords):
-            return "performance_analysis"
-        
-        # Pattern-related keywords
-        pattern_keywords = ['pattern', 'behavior', 'trend', 'recurring', 'frequency']
-        if any(keyword in message_lower for keyword in pattern_keywords):
-            return "pattern_detection"
-        
-        # Creative-related keywords
-        creative_keywords = ['creative', 'artistic', 'aesthetic', 'design', 'visual', 'brand']
-        if any(keyword in message_lower for keyword in creative_keywords):
-            return "creative_review"
-        
-        # Default to comprehensive analysis
-        return "comprehensive_analysis"
-    
-    def _get_relevant_events(self, video_id: str, message: str) -> List[Dict]:
-        """Get relevant events for the query"""
-        try:
-            # Query events from database
-            # This would typically query DuckDB for relevant events
-            # For now, return empty list as placeholder
-            return []
-        except Exception as e:
-            logger.error(f"Error getting relevant events: {e}")
-            return []
-    
-    def _build_context(self, session_context: List[Dict]) -> str:
-        """Build context from session history"""
-        if not session_context:
-            return ""
-        
-        context_parts = []
-        for entry in session_context[-5:]:  # Last 5 exchanges
-            context_parts.append(f"User: {entry.get('user', '')}")
-            context_parts.append(f"Assistant: {entry.get('assistant', '')}")
-        
-        return "\n".join(context_parts)
-    
-    def _generate_response(self, message: str, analysis_type: str, events: List[Dict], 
-                          context: str, video_id: str = None) -> str:
-        """Generate response using VLM or fallback"""
-        try:
-            # Check if VLM is available
-            if not hasattr(self, 'vlm_available') or not self.vlm_available:
-                return self._generate_fallback_response(message, analysis_type, events, context, video_id)
-            
-            # Get analysis template
-            template = self.analysis_templates.get(analysis_type, self.analysis_templates["comprehensive_analysis"])
-            
-            # Build prompt
-            prompt = self._build_prompt(
-                template=template,
-                message=message,
-                events=events,
-                context=context,
-                video_id=video_id
-            )
-            
-            # Generate response using SGLang
-            response = self._generate_with_sglang(prompt)
-            
-            return response
-            
-        except Exception as e:
-            logger.error(f"Error generating response: {e}")
-            return self._generate_fallback_response(message, analysis_type, events, context, video_id)
-    
-    def _generate_fallback_response(self, message: str, analysis_type: str, events: List[Dict], 
-                                  context: str, video_id: str = None) -> str:
-        """Generate a fallback response when VLM is not available"""
-        try:
-            # Create a simple response based on available data
-            response_parts = []
-            
-            # Add header
-            response_parts.append(f"## Analysis Response ({analysis_type.replace('_', ' ').title()})")
-            response_parts.append("")
-            
-            # Add user query
-            response_parts.append(f"**User Query:** {message}")
-            response_parts.append("")
-            
-            # Add events summary if available
-            if events:
-                response_parts.append("**Detected Events:**")
-                for event in events[:5]:  # Show first 5 events
-                    event_type = event.get('type', 'unknown')
-                    timestamp = event.get('ts', 0)
-                    description = event.get('description', 'No description')
-                    response_parts.append(f"- {event_type} at {timestamp:.2f}s: {description}")
-                response_parts.append("")
-            
-            # Add analysis summary
-            response_parts.append("**Analysis Summary:**")
-            response_parts.append("Video analysis completed successfully. The system detected various events and patterns in the video content.")
-            
-            if events:
-                response_parts.append(f"Total events detected: {len(events)}")
-            
-            response_parts.append("")
-            response_parts.append("*Note: This is a fallback response. For full AI-powered analysis, please ensure all VLM dependencies are installed.*")
-            
-            return "\n".join(response_parts)
-            
-        except Exception as e:
-            logger.error(f"Error generating fallback response: {e}")
-            return f"Analysis completed. {len(events) if events else 0} events detected. (Fallback mode)"
-    
-    def _build_prompt(self, template: str, message: str, events: List[Dict], 
-                     context: str, video_id: str = None) -> str:
-        """Build the complete prompt for VLM"""
-        # Format template with user focus
-        formatted_template = template.format(user_focus=message)
-        
-        # Build events context
-        events_context = ""
-        if events:
-            events_context = "\n\n## RELEVANT EVENTS:\n"
-            for event in events[:10]:  # Limit to 10 most relevant events
-                events_context += f"- {event.get('type', 'unknown')} at {event.get('ts', 0):.2f}s: {event.get('description', '')}\n"
-        
-        # Build complete prompt
-        prompt = f"""
-{formatted_template}
-
-## USER QUERY:
-{message}
-
-## CONVERSATION CONTEXT:
-{context if context else "No previous context"}
-
-{events_context}
-
-## INSTRUCTIONS:
-Based on the above template and the user's query, provide a comprehensive analysis. 
-Use the relevant events and context to support your analysis.
-Be specific, actionable, and professional in your response.
+### Analysis Quality Standards:
+1. **Maximum Precision**: Provide exact timestamps, durations, and measurements
+2. **Comprehensive Coverage**: Analyze every significant aspect of the video
+3. **Detailed Descriptions**: Use vivid, descriptive language for visual elements
+4. **Quantitative Data**: Include specific numbers, counts, and measurements
+5. **Pattern Recognition**: Identify recurring themes, behaviors, and sequences
+6. **Contextual Understanding**: Explain significance and relationships between elements
+7. **Professional Structure**: Organize information logically with clear sections
+8. **Evidence-Based**: Support all observations with specific visual evidence
+
+### Enhanced Analysis Focus:
+- **Temporal Precision**: Exact timestamps for all events and transitions
+- **Spatial Relationships**: Detailed descriptions of positioning and movement
+- **Visual Details**: Colors, lighting, composition, and technical quality
+- **Behavioral Analysis**: Actions, interactions, and human elements
+- **Technical Assessment**: Quality, production values, and technical specifications
+- **Narrative Structure**: Story flow, pacing, and dramatic elements
+- **Environmental Context**: Setting, atmosphere, and contextual factors
+
+### Output Quality Requirements:
+- Use **bold formatting** for emphasis on key information
+- Include **specific timestamps** for all temporal references
+- Provide **quantitative measurements** (durations, counts, sizes)
+- Use **bullet points** for lists and multiple items
+- Structure with **clear headings** for different analysis areas
+- Include **cross-references** between related information
+- Offer **insights and interpretations** beyond simple description
+
+Your analysis will be used for **high-quality user interactions**, so ensure every detail is **precise, comprehensive, and well-structured** for optimal user experience.
+
+You are analyzing a video with duration {duration:.2f} seconds. The frames provided are extracted at timestamps: {[f'{t:.2f}s' for t in timestamps]}.
 """
         
-        return prompt
-    
-    def _generate_with_sglang(self, prompt: str) -> str:
-        """Generate response using SGLang"""
-        try:
-            # Use SGLang for generation with the new API
-            response = sgl.generate(
-                prompt=prompt,
-                max_new_tokens=2048,
-                temperature=0.7,
-                top_p=0.9,
-                repetition_penalty=1.1
+        # Analyze the first frame to get initial insights, then analyze sequence
+        messages = [
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": agent_system_prompt}]
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": frames[0]},
+                    {"type": "text", "text": f"Analyze this video sequence. {analysis_prompt}"}
+                ]
+            }
+        ]
+        
+        # Add additional frames for comprehensive analysis
+        for i, frame in enumerate(frames[1:5], 1):  # Use first 5 frames to avoid token limits
+            messages[-1]["content"].append({"type": "image", "image": frame})
+            messages[-1]["content"].append({"type": "text", "text": f"Frame at {timestamps[i]:.2f}s:"})
+        
+        inputs = processor.apply_chat_template(
+            messages, 
+            add_generation_prompt=True, 
+            tokenize=True,
+            return_dict=True, 
+            return_tensors="pt"
+        ).to(model.device)
+        
+        input_len = inputs["input_ids"].shape[-1]
+        
+        with torch.inference_mode():
+            generation = model.generate(
+                **inputs, 
+                max_new_tokens=Config.MAX_OUTPUT_TOKENS,
+                temperature=Config.TEMPERATURE,
+                top_p=Config.TOP_P,
+                do_sample=True if Config.TEMPERATURE > 0 else False
             )
+            generation = generation[0][input_len:]
+        
+        response_text = processor.decode(generation, skip_special_tokens=True)
+        return response_text
+        
+    except Exception as e:
+        print(f"Gemma 3 analysis error: {e}")
+        return f"Error analyzing video: {str(e)}"
+
+def generate_chat_response(analysis_result, analysis_type, user_focus, message, chat_history):
+    """Generate contextual AI response based on video analysis using Gemma 3"""
+    try:
+        # Initialize model if not already loaded
+        initialize_model()
+        
+        # Enhanced agentic conversation prompt with advanced capabilities
+        context_prompt = f"""
+You are an advanced AI video analysis agent with comprehensive understanding capabilities. You are engaging in a multi-turn conversation about a video that has been analyzed.
+
+## AGENT CONVERSATION PROTOCOL
+
+### Current Context:
+- Analysis Type: {analysis_type.replace('_', ' ').title()}
+- Original Analysis Focus: {user_focus}
+- User Question: "{message}"
+- Conversation History: Available for context awareness
+
+### Video Analysis Context:
+{analysis_result}
             
-            return response.text
-            
-        except Exception as e:
-            logger.error(f"Error in SGLang generation: {e}")
-            # Fallback to simple response
-            return f"Analysis completed. {str(e)}"
-    
-    def cleanup(self):
-        """Cleanup resources"""
-        try:
-            if hasattr(self, 'runtime') and self.runtime is not None:
-                self.runtime.shutdown()
-            logger.info("AI Service cleaned up successfully")
-        except Exception as e:
-            logger.error(f"Error cleaning up AI Service: {e}") 
+### Agent Capabilities:
+- Autonomous Analysis: Provide comprehensive insights beyond the immediate question
+- Multi-Modal Understanding: Reference visual, audio, temporal, and spatial elements
+- Context Awareness: Adapt responses based on conversation history and user intent
+- Proactive Insights: Offer additional relevant information and observations
+- Comprehensive Reporting: Provide detailed, structured responses
+- Adaptive Focus: Adjust response depth based on question complexity
+
+### Response Quality Standards:
+1. **Precision & Accuracy**: Provide exact, verifiable information with specific timestamps
+2. **Comprehensive Coverage**: Address all aspects of the question thoroughly
+3. **Evidence-Based**: Support every claim with specific evidence from the analysis
+4. **Clear Structure**: Use logical organization with clear headings and bullet points
+5. **Professional Tone**: Maintain engaging yet professional communication
+6. **Proactive Insights**: Offer additional relevant observations beyond the direct question
+7. **Visual Clarity**: Use formatting to enhance readability (bold, italics, lists)
+8. **Contextual Awareness**: Reference previous conversation context when relevant
+
+### Response Format Guidelines:
+- **Start with a direct answer** to the user's question
+- **Use clear headings** for different sections (e.g., "**Key Findings:**", "**Timeline:**", "**Additional Insights:**")
+- **Include specific timestamps** when discussing events (e.g., "At **00:15-00:17**")
+- **Use bullet points** for lists and multiple items
+- **Bold important information** for emphasis
+- **Provide quantitative data** when available (durations, counts, measurements)
+- **Include relevant context** that enhances understanding
+- **End with actionable insights** or additional observations when relevant
+
+### Specialized Response Areas:
+- **Safety Analysis**: Focus on specific safety concerns, violations, and recommendations
+- **Timeline Events**: Provide chronological details with precise timestamps
+- **Pattern Recognition**: Highlight recurring behaviors, trends, and anomalies
+- **Performance Assessment**: Discuss quality, efficiency, and optimization opportunities
+- **Creative Elements**: Analyze artistic, aesthetic, and creative aspects
+- **Technical Details**: Provide technical specifications and quality assessments
+- **Behavioral Insights**: Analyze human behavior, interactions, and social dynamics
+- **Environmental Factors**: Consider context, setting, and environmental conditions
+
+### Quality Enhancement Techniques:
+- **Quantify responses**: Use specific numbers, durations, and measurements
+- **Cross-reference information**: Connect related details across different sections
+- **Provide context**: Explain why certain details are significant
+- **Use descriptive language**: Make responses vivid and engaging
+- **Structure complex information**: Break down complex topics into digestible sections
+- **Highlight patterns**: Identify and explain recurring themes or behaviors
+- **Offer insights**: Provide analysis beyond simple description
+
+Your mission is to provide **exceptional quality responses** that demonstrate deep understanding of the video content, offer precise information with timestamps, and deliver insights that exceed user expectations. Every response should be comprehensive, well-structured, and highly informative.
+"""
+        
+        # Include conversation history for context awareness
+        conversation_context = ""
+        if len(chat_history) > 2:  # More than just current message
+            recent_messages = chat_history[-6:]  # Last 6 messages for context
+            conversation_context = "\n\n### Recent Conversation Context:\n"
+            for msg in recent_messages:
+                if 'user' in msg:
+                    conversation_context += f"User: {msg['user']}\n"
+                elif 'ai' in msg:
+                    conversation_context += f"Agent: {msg['ai'][:200]}...\n"  # Truncate for context
+        
+        enhanced_context_prompt = context_prompt + conversation_context
+        
+        # Create messages for Gemma 3
+        messages = [
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": enhanced_context_prompt}]
+            },
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": message}]
+            }
+        ]
+        
+        inputs = processor.apply_chat_template(
+            messages, 
+            add_generation_prompt=True, 
+            tokenize=True,
+            return_dict=True, 
+            return_tensors="pt"
+        ).to(model.device)
+        
+        input_len = inputs["input_ids"].shape[-1]
+        
+        with torch.inference_mode():
+            generation = model.generate(
+                **inputs, 
+                max_new_tokens=Config.CHAT_MAX_TOKENS,
+                temperature=Config.CHAT_TEMPERATURE,
+                top_p=Config.TOP_P,
+                do_sample=True if Config.CHAT_TEMPERATURE > 0 else False
+            )
+            generation = generation[0][input_len:]
+        
+        response_text = processor.decode(generation, skip_special_tokens=True)
+        return response_text
+        
+    except Exception as e:
+        print(f"Gemma 3 chat error: {e}")
+        return f"I apologize, but I'm experiencing technical difficulties accessing the video analysis. As an advanced AI video analysis agent, I'm designed to provide comprehensive insights about your video content. Please try asking your question again, or if the issue persists, you may need to re-analyze the video to restore full agentic capabilities." 

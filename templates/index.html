@@ -3,192 +3,210 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Video Detective - Advanced Video Analysis</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/static/css/style.css" rel="stylesheet">
+    <title>AI Video Detective - Professional Analysis</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
 </head>
 <body>
-    <div class="container-fluid">
-        <!-- Header -->
-        <header class="header">
-            <div class="row align-items-center">
-                <div class="col-md-6">
-                    <h1 class="header-title">
-                        <i class="fas fa-video"></i>
-                        AI Video Detective
-                    </h1>
-                    <p class="header-subtitle">Advanced Multi-Modal Video Analysis with Real-time AI</p>
-                </div>
-                <div class="col-md-6 text-end">
-                    <div class="status-indicator">
-                        <span class="status-dot" id="connectionStatus"></span>
-                        <span class="status-text" id="connectionText">Connecting...</span>
-                    </div>
-                </div>
-            </div>
-        </header>
+    <div class="app-container">
+        <!-- Floating Cleanup Button (only shown when needed) -->
+        <div class="floating-cleanup" id="floatingCleanup" style="display: none;">
+            <button class="cleanup-btn" onclick="cleanupSession()">
+                <i class="fas fa-trash-alt"></i>
+                <span>Clear Session</span>
+            </button>
+        </div>
 
-        <!-- Main Content -->
-        <div class="row main-content">
-            <!-- Left Panel - Upload and Video Info -->
-            <div class="col-md-4">
-                <div class="panel">
-                    <div class="panel-header">
-                        <h3><i class="fas fa-upload"></i> Video Upload</h3>
-                    </div>
-                    <div class="panel-body">
-                        <!-- Upload Area -->
-                        <div class="upload-area" id="uploadArea">
-                            <div class="upload-content">
-                                <i class="fas fa-cloud-upload-alt upload-icon"></i>
-                                <h4>Drop video file here</h4>
-                                <p>or click to browse</p>
-                                <input type="file" id="videoFile" accept="video/*" style="display: none;">
-                                <button class="btn btn-primary" onclick="document.getElementById('videoFile').click()">
-                                    Choose File
+        <!-- Main Content Area -->
+        <main class="app-main">
+            <!-- Upload Section -->
+            <div class="upload-section" id="uploadSection">
+                <div class="upload-container">
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-content">
+                            <div class="upload-icon">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                            </div>
+                            <h2>Upload Video for Analysis</h2>
+                            <p class="upload-description">
+                                Drag and drop your video file here, or click to browse
+                            </p>
+                            <div class="upload-features">
+                                <div class="feature-item">
+                                    <i class="fas fa-check"></i>
+                                    <span>Advanced AI Analysis</span>
+                                </div>
+                                <div class="feature-item">
+                                    <i class="fas fa-check"></i>
+                                    <span>Visual Evidence Capture</span>
+                                </div>
+                                <div class="feature-item">
+                                    <i class="fas fa-check"></i>
+                                    <span>Real-time Insights</span>
+                                </div>
+                            </div>
+                            <div class="file-requirements">
+                                <p>Supported formats: MP4, AVI, MOV, WebM, MKV</p>
+                                <p>Maximum size: 100MB</p>
+                            </div>
+                            <div class="upload-buttons">
+                                <button class="upload-btn primary" onclick="document.getElementById('videoFile').click()">
+                                    <i class="fas fa-folder-open"></i>
+                                    Choose Video File
                                 </button>
                             </div>
-                        </div>
-
-                        <!-- Upload Progress -->
-                        <div class="upload-progress" id="uploadProgress" style="display: none;">
-                            <div class="progress">
-                                <div class="progress-bar" id="progressBar" role="progressbar"></div>
-                            </div>
-                            <p class="progress-text" id="progressText">Uploading...</p>
-                        </div>
-
-                        <!-- Video Info -->
-                        <div class="video-info" id="videoInfo" style="display: none;">
-                            <h4>Video Information</h4>
-                            <div class="info-item">
-                                <span class="info-label">File:</span>
-                                <span class="info-value" id="videoFileName"></span>
-                            </div>
-                            <div class="info-item">
-                                <span class="info-label">Duration:</span>
-                                <span class="info-value" id="videoDuration"></span>
-                            </div>
-                            <div class="info-item">
-                                <span class="info-label">Resolution:</span>
-                                <span class="info-value" id="videoResolution"></span>
-                            </div>
-                            <div class="info-item">
-                                <span class="info-label">Status:</span>
-                                <span class="info-value" id="videoStatus"></span>
-                            </div>
+                            <input type="file" id="videoFile" accept="video/*" style="display: none;">
                         </div>
                     </div>
-                </div>
-
-                <!-- Analysis Types -->
-                <div class="panel">
-                    <div class="panel-header">
-                        <h3><i class="fas fa-chart-line"></i> Analysis Types</h3>
-                    </div>
-                    <div class="panel-body">
-                        <div class="analysis-types">
-                            <div class="analysis-type" data-type="comprehensive_analysis">
-                                <i class="fas fa-search"></i>
-                                <span>Comprehensive Analysis</span>
+                    
+                    <!-- Upload Progress -->
+                    <div id="uploadProgress" class="upload-progress" style="display: none;">
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill"></div>
                             </div>
-                            <div class="analysis-type" data-type="safety_investigation">
-                                <i class="fas fa-shield-alt"></i>
-                                <span>Safety Investigation</span>
-                            </div>
-                            <div class="analysis-type" data-type="performance_analysis">
-                                <i class="fas fa-tachometer-alt"></i>
-                                <span>Performance Analysis</span>
-                            </div>
-                            <div class="analysis-type" data-type="pattern_detection">
-                                <i class="fas fa-chart-bar"></i>
-                                <span>Pattern Detection</span>
-                            </div>
-                            <div class="analysis-type" data-type="creative_review">
-                                <i class="fas fa-palette"></i>
-                                <span>Creative Review</span>
-                            </div>
+                            <div class="progress-text">Uploading...</div>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            <!-- Right Panel - Chat Interface -->
-            <div class="col-md-8">
-                <div class="panel chat-panel">
-                    <div class="panel-header">
-                        <h3><i class="fas fa-comments"></i> AI Analysis Chat</h3>
-                        <div class="chat-controls">
-                            <button class="btn btn-sm btn-outline-secondary" id="clearChat">
-                                <i class="fas fa-trash"></i> Clear
+                    
+                    <!-- File Info -->
+                    <div id="fileInfo" class="file-info" style="display: none;">
+                        <div class="file-card">
+                            <div class="file-icon">
+                                <i class="fas fa-video"></i>
+                            </div>
+                            <div class="file-details">
+                                <div class="file-name" id="fileName"></div>
+                                <div class="file-size" id="fileSize"></div>
+                            </div>
+                            <button class="file-remove" onclick="resetUpload()">
+                                <i class="fas fa-times"></i>
                             </button>
                         </div>
                     </div>
-                    <div class="panel-body">
-                        <!-- Chat Messages -->
-                        <div class="chat-messages" id="chatMessages">
-                            <div class="welcome-message">
-                                <div class="message ai-message">
-                                    <div class="message-content">
-                                        <h4>Welcome to AI Video Detective!</h4>
-                                        <p>I'm your advanced AI assistant for comprehensive video analysis. I can help you with:</p>
-                                        <ul>
-                                            <li><strong>Comprehensive Analysis:</strong> Complete multi-dimensional video analysis</li>
-                                            <li><strong>Safety Investigation:</strong> Risk assessment and safety violation detection</li>
-                                            <li><strong>Performance Analysis:</strong> Efficiency and optimization evaluation</li>
-                                            <li><strong>Pattern Detection:</strong> Behavioral pattern recognition and anomaly detection</li>
-                                            <li><strong>Creative Review:</strong> Artistic and aesthetic element analysis</li>
-                                        </ul>
-                                        <p>Upload a video and start asking questions about what you see!</p>
-                                    </div>
-                                </div>
+                    
+                    <!-- Video Preview -->
+                    <div id="videoPreview" class="video-preview" style="display: none;">
+                        <div class="preview-container">
+                            <div class="preview-header">
+                                <h3>Video Preview</h3>
+                                <p>Review your video before analysis</p>
                             </div>
-                        </div>
-
-                        <!-- Chat Input -->
-                        <div class="chat-input">
-                            <div class="input-group">
-                                <input type="text" class="form-control" id="messageInput" 
-                                       placeholder="Ask me anything about the video..." disabled>
-                                <button class="btn btn-primary" id="sendMessage" disabled>
-                                    <i class="fas fa-paper-plane"></i>
+                            <div class="video-container">
+                                <video id="previewVideo" controls preload="metadata">
+                                    <source src="" type="video/mp4">
+                                    Your browser does not support the video tag.
+                                </video>
+                            </div>
+                            <div class="preview-actions">
+                                <button class="preview-btn primary" onclick="uploadSelectedVideo()">
+                                    <i class="fas fa-upload"></i>
+                                    Upload & Analyze
                                 </button>
-                            </div>
-                            <div class="typing-indicator" id="typingIndicator" style="display: none;">
-                                <span>AI is analyzing...</span>
-                                <div class="typing-dots">
-                                    <span></span>
-                                    <span></span>
-                                    <span></span>
-                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Events Timeline -->
-        <div class="row" id="eventsSection" style="display: none;">
-            <div class="col-12">
-                <div class="panel">
-                    <div class="panel-header">
-                        <h3><i class="fas fa-clock"></i> Events Timeline</h3>
+            <!-- Chat Interface -->
+            <div class="chat-interface" id="chatInterface" style="display: none;">
+                <div class="chat-container">
+                    <!-- Chat Messages -->
+                    <div class="chat-messages" id="chatMessages">
+                        <!-- Messages will be added here dynamically -->
                     </div>
-                    <div class="panel-body">
-                        <div class="timeline" id="eventsTimeline">
-                            <!-- Events will be populated here -->
+
+                    <!-- Typing Indicator -->
+                    <div class="typing-indicator" id="typingIndicator" style="display: none;">
+                        <div class="typing-content">
+                            <div class="typing-avatar">
+                                <i class="fas fa-robot"></i>
+                            </div>
+                            <div class="typing-dots">
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                            </div>
                         </div>
+                    </div>
+
+                    <!-- Chat Input -->
+                    <div class="chat-input-container">
+                        <div class="chat-input-wrapper">
+                            <div class="input-container">
+                                <textarea 
+                                    class="chat-input" 
+                                    id="chatInput" 
+                                    placeholder="Ask me anything about the video..."
+                                    rows="1"
+                                    disabled
+                                ></textarea>
+                                <button class="send-button" id="sendBtn" disabled>
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                            </div>
+                            <div class="input-footer">
+                                <span class="input-hint">Press Enter to send, Shift+Enter for new line</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Professional Loading Modal -->
+    <div class="loading-modal" id="loadingModal" style="display: none;">
+        <div class="loading-content">
+            <div class="loading-spinner">
+                <div class="spinner-ring"></div>
+            </div>
+            <div class="loading-text">
+                <h3 id="loadingMessage">Analyzing Video</h3>
+                <p>Processing your video with advanced AI algorithms...</p>
+                <div class="loading-steps">
+                    <div class="step active">
+                        <i class="fas fa-upload"></i>
+                        <span>Uploading</span>
+                    </div>
+                    <div class="step">
+                        <i class="fas fa-cog"></i>
+                        <span>Processing</span>
+                    </div>
+                    <div class="step">
+                        <i class="fas fa-brain"></i>
+                        <span>Analyzing</span>
+                    </div>
+                    <div class="step">
+                        <i class="fas fa-check"></i>
+                        <span>Complete</span>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Evidence Modal -->
+    <div class="evidence-modal" id="evidenceModal" style="display: none;">
+        <div class="evidence-content">
+            <div class="evidence-header">
+                <h3>Visual Evidence</h3>
+                <button class="close-btn" onclick="closeEvidenceModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="evidence-body">
+                <img id="evidenceModalImage" src="" alt="Evidence">
+                <div class="evidence-info" id="evidenceModalInfo"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    <script src="/static/js/app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html> 

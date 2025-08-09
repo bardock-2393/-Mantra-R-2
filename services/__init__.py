@@ -1,1 +1,1 @@
-# AI Video Detective Services Package 
+# Services package 
