@@ -183,8 +183,8 @@ class VideoDetective {
             return;
         }
 
-        if (file.size > 100 * 1024 * 1024) { // 100MB limit
-            this.showError('File size must be less than 100MB');
+        if (file.size > 2 * 1024 * 1024 * 1024) { // 2GB limit - 80GB GPU optimized
+            this.showError('File size must be less than 2GB');
             return;
         }
 
