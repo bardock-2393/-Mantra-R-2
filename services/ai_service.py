@@ -36,7 +36,6 @@ def initialize_model():
                 model_id, 
                 device_map="auto",
                 torch_dtype=torch.bfloat16,  # A100 supports bfloat16 natively
-                attn_implementation="flash_attention_2",  # Flash Attention for speed
                 trust_remote_code=True
             ).eval()
             
