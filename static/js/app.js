@@ -7,9 +7,6 @@ class VideoDetective {
         this.isTyping = false;
         this.socket = null;
         this.currentSessionId = null;
-        this.currentUploadId = null;
-        this.currentUploader = null;
-        this.heartbeatInterval = null;
         this.init();
     }
 
@@ -31,13 +28,7 @@ class VideoDetective {
         }
         
         console.log('🔗 Connecting to WebSocket for real-time updates...');
-        this.socket = io({
-            reconnection: true,
-            reconnectionAttempts: 5,
-            reconnectionDelay: 1000,
-            timeout: 20000,
-            transports: ['websocket', 'polling']
-        });
+        this.socket = io();
         
         this.socket.on('connect', () => {
             console.log('🔗 Connected to WebSocket for real-time updates');
@@ -52,31 +43,6 @@ class VideoDetective {
         this.socket.on('disconnect', () => {
             console.log('🔌 Disconnected from WebSocket');
             this.showNotification('Real-time connection lost', 'warning');
-            
-            // If upload is in progress, show reconnection message
-            if (this.currentUploadId) {
-                this.showNotification('Upload in progress - attempting to reconnect...', 'info');
-            }
-        });
-        
-        this.socket.on('reconnect', () => {
-            console.log('🔄 WebSocket reconnected');
-            this.showNotification('Real-time connection restored', 'success');
-            
-            // Rejoin session if we have one
-            if (this.currentSessionId) {
-                this.socket.emit('join_session', { session_id: this.currentSessionId });
-            }
-            
-            // If upload was in progress, show reconnection message
-            if (this.currentUploadId) {
-                this.showNotification('Upload connection restored - resuming...', 'info');
-            }
-        });
-        
-        this.socket.on('reconnect_error', () => {
-            console.log('❌ WebSocket reconnection failed');
-            this.showNotification('Connection failed - please refresh page', 'error');
         });
         
         // Analysis progress updates
@@ -225,322 +191,6 @@ class VideoDetective {
         this.currentFile = file;
         this.showFileInfo(file);
         this.showVideoPreview(file);
-        
-        // Initialize WebSocket upload capabilities
-        this.initializeWebSocketUpload();
-    }
-    
-    // === SESSION MANAGEMENT ===
-    
-    generateSessionId() {
-        // Generate a unique session ID
-        return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    }
-    
-    // === WEBSOCKET UPLOAD METHODS ===
-    
-    initializeWebSocketUpload() {
-        // Initialize WebSocket upload event listeners
-        if (!this.socket) {
-            console.error('WebSocket not connected');
-            return;
-        }
-        
-        // WebSocket upload event listeners
-        this.socket.on('upload_ready', (data) => {
-            console.log('📤 Upload ready:', data);
-            this.currentUploadId = data.upload_id;
-            this.showNotification(data.message, 'success');
-        });
-        
-        this.socket.on('upload_progress', (data) => {
-            this.updateUploadProgress(data);
-        });
-        
-        this.socket.on('upload_completed', (data) => {
-            console.log('✅ Upload completed:', data);
-            this.stopUploadHeartbeat();
-            this.hideUploadProgress();
-            this.showSuccess(data.message);
-            this.currentFilePath = data.file_path;
-            this.currentUploadId = null;
-            this.enableAnalysisButtons();
-        });
-        
-        this.socket.on('upload_error', (data) => {
-            console.error('❌ Upload error:', data);
-            this.stopUploadHeartbeat();
-            this.hideUploadProgress();
-            this.showError(`Upload failed: ${data.error}`);
-            
-            // Reset upload state
-            this.currentUploadId = null;
-        });
-        
-        this.socket.on('upload_cancelled', (data) => {
-            console.log('🚫 Upload cancelled:', data);
-            this.stopUploadHeartbeat();
-            this.hideUploadProgress();
-            this.showNotification(data.message, 'warning');
-            this.currentUploadId = null;
-        });
-        
-        this.socket.on('chunk_received', (data) => {
-            // Real-time chunk confirmation (optional)
-            console.log(`📦 Chunk received: ${data.progress.toFixed(1)}%`);
-        });
-    }
-    
-    async startWebSocketUpload() {
-        // Start WebSocket-based file upload
-        if (!this.currentFile) {
-            this.showError('No file selected');
-            return;
-        }
-        
-        if (!this.socket || !this.socket.connected) {
-            this.showError('WebSocket not connected. Please refresh the page.');
-            return;
-        }
-        
-        try {
-            // Ensure we have a session ID
-            if (!this.currentSessionId) {
-                this.currentSessionId = this.generateSessionId();
-                console.log('🔄 Generated new session ID:', this.currentSessionId);
-            }
-            
-            // Join the session for real-time updates
-            this.socket.emit('join_session', { session_id: this.currentSessionId });
-            
-            // Show upload progress UI
-            this.showUploadProgress();
-            
-            console.log('📤 Starting WebSocket upload:', {
-                session_id: this.currentSessionId,
-                filename: this.currentFile.name,
-                file_size: this.currentFile.size,
-                file_type: this.currentFile.type
-            });
-            
-            // Initialize upload session
-            this.socket.emit('start_upload', {
-                session_id: this.currentSessionId,
-                filename: this.currentFile.name,
-                file_size: this.currentFile.size,
-                file_type: this.currentFile.type
-            });
-            
-            // Wait for upload_ready event before starting chunk upload (with timeout)
-            const uploadTimeout = setTimeout(() => {
-                this.hideUploadProgress();
-                this.showError('Upload initialization timeout. Please try again.');
-            }, 10000); // 10 second timeout
-            
-            this.socket.once('upload_ready', (data) => {
-                clearTimeout(uploadTimeout);
-                this.currentUploadId = data.upload_id;
-                this.startUploadHeartbeat();
-                this.uploadFileInChunks();
-            });
-            
-            this.socket.once('upload_error', (data) => {
-                clearTimeout(uploadTimeout);
-                // Error handling is already set up in initializeWebSocketUpload
-            });
-            
-        } catch (error) {
-            console.error('Upload start error:', error);
-            this.showError(`Upload failed: ${error.message}`);
-            this.hideUploadProgress();
-        }
-    }
-    
-    async uploadFileInChunks() {
-        // Upload file in chunks via WebSocket - Dynamic chunk size for 80GB GPU optimization
-        const file = this.currentFile;
-        
-        // Dynamic chunk size based on file size for optimal performance
-        let CHUNK_SIZE;
-        if (file.size < 100 * 1024 * 1024) { // < 100MB
-            CHUNK_SIZE = 5 * 1024 * 1024;   // 5MB chunks
-        } else if (file.size < 500 * 1024 * 1024) { // < 500MB  
-            CHUNK_SIZE = 10 * 1024 * 1024;  // 10MB chunks
-        } else { // Large files (500MB+)
-            CHUNK_SIZE = 20 * 1024 * 1024;  // 20MB chunks for maximum speed
-        }
-        
-        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-        
-        console.log(`🚀 Starting chunked upload: ${totalChunks} chunks of ${CHUNK_SIZE / (1024*1024)}MB each (file: ${(file.size / (1024*1024)).toFixed(1)}MB)`);
-        
-        for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-            const start = chunkIndex * CHUNK_SIZE;
-            const end = Math.min(start + CHUNK_SIZE, file.size);
-            const chunk = file.slice(start, end);
-            const isLast = chunkIndex === totalChunks - 1;
-            
-            try {
-                // Convert chunk to base64
-                const base64Chunk = await this.fileToBase64(chunk);
-                
-                // Send chunk via WebSocket
-                this.socket.emit('upload_chunk', {
-                    upload_id: this.currentUploadId,
-                    chunk_data: base64Chunk,
-                    chunk_index: chunkIndex,
-                    is_final: isLast
-                });
-                
-                // Minimal delay only for very large uploads to prevent overwhelming
-                if (totalChunks > 100 && chunkIndex % 10 === 0 && chunkIndex > 0) {
-                    await new Promise(resolve => setTimeout(resolve, 2));
-                }
-                
-            } catch (error) {
-                console.error(`Chunk ${chunkIndex} upload failed:`, error);
-                this.cancelWebSocketUpload();
-                this.showError(`Upload failed at chunk ${chunkIndex + 1}/${totalChunks}`);
-                return;
-            }
-        }
-    }
-    
-    cancelWebSocketUpload() {
-        // Cancel active upload (HTTP or WebSocket)
-        if (this.currentUploader) {
-            // Cancel fast HTTP upload
-            this.currentUploader.cancelUpload();
-            this.currentUploader = null;
-        } else if (this.currentUploadId && this.socket) {
-            // Cancel WebSocket upload
-            this.socket.emit('cancel_upload', {
-                upload_id: this.currentUploadId
-            });
-            this.currentUploadId = null;
-        }
-        this.stopUploadHeartbeat();
-        this.hideUploadProgress();
-    }
-    
-    fileToBase64(file) {
-        // Convert file chunk to base64
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-                // Remove data URL prefix (data:;base64,)
-                const base64 = reader.result.split(',')[1];
-                resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
-    }
-    
-    showUploadProgress() {
-        // Show upload progress UI
-        const uploadArea = document.getElementById('uploadArea');
-        
-        // Create progress UI if it doesn't exist
-        if (!document.getElementById('uploadProgress')) {
-            const progressHTML = `
-                <div id="uploadProgress" class="upload-progress">
-                    <div class="progress-header">
-                        <h3>📤 Uploading Video...</h3>
-                        <div id="percentageDisplay" class="percentage-display">0%</div>
-                        <button id="cancelUploadBtn" class="cancel-btn">❌ Cancel</button>
-                    </div>
-                    <div class="progress-bar-container">
-                        <div id="progressBar" class="progress-bar">
-                            <div id="progressFill" class="progress-fill">
-                                <div id="progressPercentage" class="progress-percentage">0%</div>
-                            </div>
-                        </div>
-                        <div id="progressText" class="progress-text">0 MB/s</div>
-                    </div>
-                    <div id="uploadDetails" class="upload-details">
-                        Preparing upload...
-                    </div>
-                </div>
-            `;
-            uploadArea.insertAdjacentHTML('afterend', progressHTML);
-            
-            // Add cancel button handler
-            document.getElementById('cancelUploadBtn').addEventListener('click', () => {
-                this.cancelWebSocketUpload();
-            });
-        }
-        
-        document.getElementById('uploadProgress').style.display = 'block';
-    }
-    
-    updateUploadProgress(data) {
-        // Update upload progress display with prominent percentage
-        const progressFill = document.getElementById('progressFill');
-        const progressText = document.getElementById('progressText');
-        const uploadDetails = document.getElementById('uploadDetails');
-        const percentageDisplay = document.getElementById('percentageDisplay');
-        const progressPercentage = document.getElementById('progressPercentage');
-        
-        const percentage = data.progress.toFixed(1);
-        
-        if (progressFill) {
-            progressFill.style.width = `${percentage}%`;
-        }
-        
-        if (percentageDisplay) {
-            percentageDisplay.textContent = `${percentage}%`;
-        }
-        
-        if (progressPercentage) {
-            progressPercentage.textContent = `${percentage}%`;
-            // Show percentage inside bar only when there's enough space (>10%)
-            progressPercentage.style.display = data.progress > 10 ? 'block' : 'none';
-        }
-        
-        if (progressText) {
-            progressText.textContent = `${data.upload_speed.toFixed(1)} MB/s`;
-        }
-        
-        if (uploadDetails) {
-            uploadDetails.textContent = `${this.formatFileSize(data.bytes_received)} / ${this.formatFileSize(data.total_size)} • ${data.chunks_received} chunks received`;
-        }
-        
-        console.log(`📊 Upload Progress: ${percentage}% (${data.upload_speed.toFixed(1)} MB/s)`);
-    }
-    
-    hideUploadProgress() {
-        // Hide upload progress UI
-        const uploadProgress = document.getElementById('uploadProgress');
-        if (uploadProgress) {
-            uploadProgress.style.display = 'none';
-        }
-    }
-    
-    enableAnalysisButtons() {
-        // Enable analysis buttons after successful upload
-        const analyzeBtn = document.getElementById('analyzeBtn');
-        const uploadBtn = document.getElementById('uploadBtn');
-        
-        if (analyzeBtn) analyzeBtn.disabled = false;
-        if (uploadBtn) uploadBtn.textContent = '✅ Ready to Analyze';
-    }
-    
-    startUploadHeartbeat() {
-        // Start heartbeat to keep connection alive during upload
-        this.heartbeatInterval = setInterval(() => {
-            if (this.socket && this.socket.connected && this.currentUploadId) {
-                this.socket.emit('ping');
-            }
-        }, 15000); // Ping every 15 seconds during upload
-    }
-    
-    stopUploadHeartbeat() {
-        // Stop heartbeat when upload is complete
-        if (this.heartbeatInterval) {
-            clearInterval(this.heartbeatInterval);
-            this.heartbeatInterval = null;
-        }
     }
 
     isValidVideoFile(file) {
@@ -591,100 +241,182 @@ class VideoDetective {
         // Check if this is a demo video preview
         const previewVideo = document.getElementById('previewVideo');
         if (previewVideo && previewVideo.src && previewVideo.src.includes('/demo-video')) {
-            // This is a demo video, upload it via traditional method (demo files are small)
+            // This is a demo video, upload it
             await this.uploadDemoVideo();
         } else if (this.currentFile) {
-            // This is a regular uploaded file - use WebSocket upload for better performance
-            await this.uploadFileWebSocket(this.currentFile);
+            // This is a regular uploaded file
+            await this.uploadFile(this.currentFile);
         } else {
             // If no file is selected but we're in demo mode, upload demo video
             await this.uploadDemoVideo();
         }
     }
-
-    async uploadFileWebSocket(file) {
-        // Use fast HTTP upload instead of WebSocket for better performance
+    
+    // === STREAMING UPLOAD METHODS ===
+    
+    async uploadFileStreaming(file) {
+        /**
+         * Upload file using streaming upload system for large files
+         */
         try {
-            console.log('🚀 Using Fast HTTP Upload for better performance...');
-            await this.startFastHTTPUpload(file);
+            console.log('🚀 Starting streaming upload for large file...');
+            
+            // Create uploader instance
+            const uploader = new StreamingUploader({
+                chunkSize: 16 * 1024 * 1024, // 16MB chunks
+                maxParallel: 6,              // Parallel uploads
+                
+                onStarted: (data) => {
+                    console.log('📋 Streaming upload started:', data);
+                    this.showUploadProgress();
+                },
+                
+                onProgress: (data) => {
+                    this.updateStreamingProgress(data);
+                },
+                
+                onComplete: (data) => {
+                    console.log('✅ Streaming upload completed:', data);
+                    this.hideUploadProgress();
+                    this.currentFilePath = data.file_path;
+                    this.showFileInfo(file, data.filename, data.size);
+                    this.showCleanupButton();
+                    this.enableAnalysisButtons();
+                    this.analyzeVideo(); // Auto-start analysis
+                },
+                
+                onError: (error) => {
+                    console.error('❌ Streaming upload failed:', error);
+                    this.hideUploadProgress();
+                    this.showError(`Upload failed: ${error.message}`);
+                }
+            });
+            
+            // Store uploader for cancellation
+            this.currentUploader = uploader;
+            
+            // Start the upload
+            await uploader.startUpload(file);
             
         } catch (error) {
-            console.error('Fast upload failed, falling back to WebSocket:', error);
-            // Fallback to WebSocket upload
-            try {
-                await this.startWebSocketUpload();
-                
-                this.socket.once('upload_completed', (data) => {
-                    console.log('✅ WebSocket upload completed, starting analysis...');
-                    this.showFileInfo(file, data.filename, data.file_size);
-                    this.showCleanupButton();
-                    this.analyzeVideo();
-                });
-                
-            } catch (wsError) {
-                console.error('WebSocket upload also failed:', wsError);
-                this.showError('Upload failed: ' + wsError.message);
-            }
+            console.error('Streaming upload error:', error);
+            this.showError(`Upload failed: ${error.message}`);
+            this.hideUploadProgress();
         }
     }
     
-    async startFastHTTPUpload(file) {
-        // Fast HTTP chunked upload implementation
-        const uploader = new FastUploader();
+    updateStreamingProgress(data) {
+        /**
+         * Update streaming upload progress with detailed metrics
+         */
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const uploadDetails = document.getElementById('uploadDetails');
+        const percentageDisplay = document.getElementById('percentageDisplay');
+        const progressPercentage = document.getElementById('progressPercentage');
         
-        // Show upload progress UI
-        this.showUploadProgress();
+        const percentage = data.progress.toFixed(1);
         
-        // Configure upload callbacks
-        const uploadOptions = {
-            maxConcurrent: 6, // Parallel uploads for speed
+        if (progressFill) {
+            progressFill.style.width = `${percentage}%`;
+        }
+        
+        if (percentageDisplay) {
+            percentageDisplay.textContent = `${percentage}%`;
+        }
+        
+        if (progressPercentage) {
+            progressPercentage.textContent = `${percentage}%`;
+            progressPercentage.style.display = data.progress > 10 ? 'block' : 'none';
+        }
+        
+        if (progressText) {
+            progressText.textContent = `${data.uploadSpeed.toFixed(1)} MB/s`;
+        }
+        
+        if (uploadDetails) {
+            const uploadedMB = (data.uploadedBytes / (1024**2)).toFixed(1);
+            const totalMB = (data.totalSize / (1024**2)).toFixed(1);
+            const elapsedMin = (data.elapsedTime / 60).toFixed(1);
+            uploadDetails.textContent = `${uploadedMB}MB / ${totalMB}MB • ${elapsedMin}min elapsed`;
+        }
+        
+        console.log(`📊 Streaming Progress: ${percentage}% (${data.uploadSpeed.toFixed(1)} MB/s)`);
+    }
+    
+    showUploadProgress() {
+        /**
+         * Show streaming upload progress UI
+         */
+        const uploadArea = document.getElementById('uploadArea');
+        
+        // Create progress UI if it doesn't exist
+        if (!document.getElementById('uploadProgress')) {
+            const progressHTML = `
+                <div id="uploadProgress" class="upload-progress">
+                    <div class="progress-header">
+                        <h3>🚀 Streaming Upload...</h3>
+                        <div id="percentageDisplay" class="percentage-display">0%</div>
+                        <button id="cancelUploadBtn" class="cancel-btn">❌ Cancel</button>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div id="progressBar" class="progress-bar">
+                            <div id="progressFill" class="progress-fill">
+                                <div id="progressPercentage" class="progress-percentage">0%</div>
+                            </div>
+                        </div>
+                        <div id="progressText" class="progress-text">0 MB/s</div>
+                    </div>
+                    <div id="uploadDetails" class="upload-details">
+                        Initializing streaming upload...
+                    </div>
+                </div>
+            `;
+            uploadArea.insertAdjacentHTML('afterend', progressHTML);
             
-            onProgress: (data) => {
-                this.updateUploadProgress({
-                    progress: data.progress,
-                    bytes_received: data.bytes_uploaded,
-                    total_size: data.total_size,
-                    upload_speed: data.upload_speed,
-                    chunks_received: data.chunks_uploaded
-                });
-            },
-            
-            onComplete: (data) => {
-                console.log('✅ Fast HTTP upload completed:', data);
-                this.stopUploadHeartbeat();
+            // Add cancel button handler
+            document.getElementById('cancelUploadBtn').addEventListener('click', () => {
+                if (this.currentUploader) {
+                    this.currentUploader.cancelUpload();
+                    this.currentUploader = null;
+                }
                 this.hideUploadProgress();
-                this.showSuccess(`Upload completed: ${data.filename} (${data.average_speed.toFixed(1)}MB/s avg)`);
-                
-                // Set up for analysis
-                this.currentFilePath = data.file_path;
-                this.showFileInfo(file, data.filename, data.total_size);
-                this.showCleanupButton();
-                this.enableAnalysisButtons();
-                this.analyzeVideo();
-            },
-            
-            onError: (error) => {
-                console.error('❌ Fast HTTP upload error:', error);
-                this.stopUploadHeartbeat();
-                this.hideUploadProgress();
-                this.showError(`Upload failed: ${error.message}`);
-            }
-        };
+            });
+        }
         
-        // Start heartbeat for connection stability
-        this.startUploadHeartbeat();
+        document.getElementById('uploadProgress').style.display = 'block';
+    }
+    
+    hideUploadProgress() {
+        /**
+         * Hide upload progress UI
+         */
+        const uploadProgress = document.getElementById('uploadProgress');
+        if (uploadProgress) {
+            uploadProgress.style.display = 'none';
+        }
+    }
+    
+    enableAnalysisButtons() {
+        /**
+         * Enable analysis buttons after successful upload
+         */
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const uploadBtn = document.getElementById('uploadBtn');
         
-        // Start the upload
-        await uploader.startUpload(file, uploadOptions);
-        
-        // Store uploader instance for cancellation
-        this.currentUploader = uploader;
+        if (analyzeBtn) analyzeBtn.disabled = false;
+        if (uploadBtn) uploadBtn.textContent = '✅ Ready to Analyze';
     }
 
-    async uploadFile(file) {
-        // Legacy HTTP upload method (fallback for small files/demos)
-        const formData = new FormData();
-        formData.append('video', file);
+          async uploadFile(file) {
+          // Use streaming upload for better performance with large files
+          if (Config.STREAM_UPLOAD_ENABLED !== false) {
+              return await this.uploadFileStreaming(file);
+          }
+          
+          // Fallback to traditional upload for small files
+          const formData = new FormData();
+          formData.append('video', file);
 
         try {
             this.showProgress();
