@@ -1326,4 +1326,145 @@ body {
     text-align: center;
     margin-top: 10px;
     font-family: 'Monaco', 'Consolas', monospace;
+}
+
+/* === ENHANCED UPLOAD PROGRESS STYLES === */
+
+.upload-progress {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    color: white;
+    padding: 20px;
+    border-radius: 12px;
+    margin: 20px 0;
+    box-shadow: 0 8px 32px rgba(79, 172, 254, 0.3);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    animation: slideInUp 0.3s ease;
+}
+
+.upload-progress .progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.upload-progress .progress-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.upload-progress .progress-percentage {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.upload-progress .cancel-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.upload-progress .cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+}
+
+.upload-progress .progress-bar-container {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    padding: 3px;
+    margin: 15px 0;
+    position: relative;
+    overflow: hidden;
+}
+
+.upload-progress .progress-bar {
+    background: rgba(255, 255, 255, 0.1);
+    height: 16px;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+}
+
+.upload-progress .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #fff, #e3f2fd);
+    border-radius: 8px;
+    transition: width 0.3s ease;
+    position: relative;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.upload-progress .progress-text {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #1976d2;
+    text-shadow: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.upload-progress .progress-speed {
+    text-align: center;
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-top: 8px;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.upload-progress .progress-details {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.8);
+    text-align: center;
+    margin-top: 12px;
+    font-family: 'Monaco', 'Consolas', monospace;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 8px 12px;
+    border-radius: 6px;
+}
+
+/* Progress bar animation */
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Pulsing effect for active upload */
+.upload-progress .progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+    animation: progressShimmer 2s infinite;
+}
+
+@keyframes progressShimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
 } 

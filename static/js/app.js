@@ -331,6 +331,9 @@ class VideoDetective {
             console.error('❌ Streaming upload failed:', error);
             this.hideStreamingProgress();
             this.showError(`Upload failed: ${error.message}`);
+        } finally {
+            // Reset upload timer
+            this.uploadStartTime = null;
         }
     }
     
@@ -453,12 +456,8 @@ class VideoDetective {
         try {
             this.showProgress();
 
-            const response = await fetch('/upload', {
-                method: 'POST',
-                body: formData
-            });
-
-            const result = await response.json();
+            // Use XMLHttpRequest for real progress tracking
+            const result = await this.uploadWithProgress(formData);
 
             if (result.success) {
                 this.hideProgress();
@@ -475,33 +474,161 @@ class VideoDetective {
         }
     }
 
+    uploadWithProgress(formData) {
+        /**
+         * Upload with real progress tracking using XMLHttpRequest
+         */
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            
+            // Track upload progress
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percentComplete = (e.loaded / e.total) * 100;
+                    this.updateProgress(percentComplete, e.loaded, e.total);
+                }
+            });
+            
+            // Handle completion
+            xhr.addEventListener('load', () => {
+                if (xhr.status === 200) {
+                    try {
+                        const result = JSON.parse(xhr.responseText);
+                        resolve(result);
+                    } catch (error) {
+                        reject(new Error('Invalid response format'));
+                    }
+                } else {
+                    reject(new Error(`Upload failed: ${xhr.status}`));
+                }
+            });
+            
+            // Handle errors
+            xhr.addEventListener('error', () => {
+                reject(new Error('Network error during upload'));
+            });
+            
+            // Start upload
+            xhr.open('POST', '/upload');
+            xhr.send(formData);
+        });
+    }
+
     showProgress() {
         const progress = document.getElementById('uploadProgress');
-        const progressFill = progress.querySelector('.progress-fill');
+        if (!progress) {
+            // Create progress bar if it doesn't exist
+            this.createProgressBar();
+        }
         
-        progress.style.display = 'block';
+        const progressElement = document.getElementById('uploadProgress');
+        const progressFill = progressElement.querySelector('.progress-fill');
+        const progressText = progressElement.querySelector('.progress-text');
+        const progressPercentage = progressElement.querySelector('.progress-percentage');
+        
+        progressElement.style.display = 'block';
         progressFill.style.width = '0%';
+        if (progressText) progressText.textContent = 'Starting upload...';
+        if (progressPercentage) progressPercentage.textContent = '0%';
+    }
+    
+    createProgressBar() {
+        /**
+         * Create enhanced progress bar UI
+         */
+        const uploadArea = document.getElementById('uploadArea');
         
-        // Simulate progress
-        let width = 0;
-        const interval = setInterval(() => {
-            if (width >= 90) {
-                clearInterval(interval);
+        const progressHTML = `
+            <div id="uploadProgress" class="upload-progress" style="display: none;">
+                <div class="progress-header">
+                    <h3>📤 Uploading Video</h3>
+                    <div class="progress-percentage">0%</div>
+                    <button id="cancelUploadBtn" class="cancel-btn" style="display: none;">❌ Cancel</button>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill">
+                            <div class="progress-text">0%</div>
+                        </div>
+                    </div>
+                    <div class="progress-speed">0 MB/s</div>
+                </div>
+                <div class="progress-details">
+                    Initializing upload...
+                </div>
+            </div>
+        `;
+        
+        uploadArea.insertAdjacentHTML('afterend', progressHTML);
+    }
+    
+    updateProgress(percentage, loadedBytes, totalBytes) {
+        /**
+         * Update progress bar with real-time data
+         */
+        const progressFill = document.querySelector('#uploadProgress .progress-fill');
+        const progressText = document.querySelector('#uploadProgress .progress-text');
+        const progressPercentage = document.querySelector('#uploadProgress .progress-percentage');
+        const progressSpeed = document.querySelector('#uploadProgress .progress-speed');
+        const progressDetails = document.querySelector('#uploadProgress .progress-details');
+        
+        // Update progress bar
+        if (progressFill) {
+            progressFill.style.width = `${percentage.toFixed(1)}%`;
+        }
+        
+        // Update percentage displays
+        const percentText = `${percentage.toFixed(1)}%`;
+        if (progressText) progressText.textContent = percentText;
+        if (progressPercentage) progressPercentage.textContent = percentText;
+        
+        // Calculate and display speed
+        if (!this.uploadStartTime) {
+            this.uploadStartTime = Date.now();
+        }
+        
+        const elapsedSeconds = (Date.now() - this.uploadStartTime) / 1000;
+        const speedMBps = (loadedBytes / (1024 * 1024)) / elapsedSeconds;
+        
+        if (progressSpeed && elapsedSeconds > 0.5) { // Wait a bit for accurate speed
+            progressSpeed.textContent = `${speedMBps.toFixed(1)} MB/s`;
+        }
+        
+        // Update details
+        if (progressDetails) {
+            const loadedMB = (loadedBytes / (1024 * 1024)).toFixed(1);
+            const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
+            const remainingMB = totalMB - loadedMB;
+            const etaSeconds = remainingMB / (speedMBps || 1);
+            
+            if (elapsedSeconds > 1) {
+                progressDetails.textContent = `${loadedMB}MB / ${totalMB}MB • ${speedMBps.toFixed(1)} MB/s • ETA: ${etaSeconds.toFixed(0)}s`;
             } else {
-                width += Math.random() * 10;
-                progressFill.style.width = width + '%';
+                progressDetails.textContent = `${loadedMB}MB / ${totalMB}MB • Calculating speed...`;
             }
-        }, 200);
+        }
     }
 
     hideProgress() {
         const progress = document.getElementById('uploadProgress');
-        const progressFill = progress.querySelector('.progress-fill');
+        if (!progress) return;
         
-        progressFill.style.width = '100%';
+        const progressFill = progress.querySelector('.progress-fill');
+        const progressPercentage = progress.querySelector('.progress-percentage');
+        const progressText = progress.querySelector('.progress-text');
+        
+        // Show completion
+        if (progressFill) progressFill.style.width = '100%';
+        if (progressPercentage) progressPercentage.textContent = '100%';
+        if (progressText) progressText.textContent = '100%';
+        
+        // Reset upload timer
+        this.uploadStartTime = null;
+        
+        // Hide after animation
         setTimeout(() => {
             progress.style.display = 'none';
-        }, 500);
+        }, 1000);
     }
 
     async analyzeVideo() {
