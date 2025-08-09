@@ -1,18 +1,24 @@
 """
-AI Service Module
+AI Service Module - Round 2 Performance Optimized
 Handles Gemma 3 model interactions and analysis functionality
+Enhanced for sub-1000ms latency with caching and performance monitoring
 """
 
 import asyncio
 import torch
+import hashlib
+import time
+import numpy as np
 from transformers import AutoProcessor, Gemma3ForConditionalGeneration, pipeline
 from PIL import Image
 import cv2
 import os
 import tempfile
 import shutil
+from typing import Tuple, Optional, List
 from config import Config
 from analysis_templates import generate_analysis_prompt
+from services.performance_service import measure_latency, cache_manager
 
 # Import WebSocket service for real-time updates (avoiding circular import)
 def get_websocket_service():
@@ -92,8 +98,25 @@ def initialize_model():
             print(f"Error loading Gemma 3 12B model: {e}")
             raise e
 
-def extract_video_frames(video_path, num_frames=None):
-    """Extract frames from video for analysis - A100 Optimized with Smart Sampling for Long Videos"""
+@measure_latency("frame_extraction")
+def extract_video_frames(video_path, num_frames=None) -> Tuple[List[Image.Image], List[float], float]:
+    """Extract frames from video for analysis - A100 Optimized with Smart Sampling + Round 2 Caching"""
+    
+    # Check cache first for massive speed improvement
+    cache_key = cache_manager.get_cache_key(
+        video_path, 
+        "frames", 
+        num_frames=num_frames,
+        file_mtime=os.path.getmtime(video_path)
+    )
+    
+    cached_result = cache_manager.get(cache_key)
+    if cached_result:
+        print(f"🚀 CACHE HIT: Frame extraction from cache in <0.01s")
+        # Convert cached data back to PIL Images
+        frames = [Image.fromarray(frame_data) for frame_data in cached_result['frames']]
+        return frames, cached_result['timestamps'], cached_result['duration']
+    
     import random
     
     cap = cv2.VideoCapture(video_path)
@@ -157,17 +180,46 @@ def extract_video_frames(video_path, num_frames=None):
     
     cap.release()
     
+    # Cache the extracted frames for future requests (massive performance boost)
+    try:
+        # Convert PIL Images to numpy arrays for caching
+        cached_frames = [np.array(frame) for frame in frames]
+        cache_data = {
+            'frames': cached_frames,
+            'timestamps': timestamps,
+            'duration': duration
+        }
+        cache_manager.set(cache_key, cache_data, ttl=7200)  # Cache for 2 hours
+        print(f"💾 CACHED: Frame extraction results for future requests")
+    except Exception as e:
+        print(f"⚠️ Cache storage failed: {e}")
+    
     # Memory optimization for long videos
     if duration >= Config.LONG_VIDEO_THRESHOLD:
         torch.cuda.empty_cache()  # Clear GPU memory after processing
     
     return frames, timestamps, duration
 
+@measure_latency("video_analysis")
 async def analyze_video_with_gemini(video_path, analysis_type, user_focus, session_id=None):
-    """Analyze video using Gemma 3 model with real-time WebSocket updates"""
+    """Analyze video using Gemma 3 model with real-time WebSocket updates - Round 2 Optimized"""
     import time
     start_time = time.time()
     print(f"🎬 Starting video analysis at {time.strftime('%H:%M:%S')}")
+    
+    # Check cache for complete analysis first
+    cache_key = cache_manager.get_cache_key(
+        video_path, 
+        "analysis", 
+        analysis_type=analysis_type,
+        user_focus=user_focus,
+        file_mtime=os.path.getmtime(video_path)
+    )
+    
+    cached_analysis = cache_manager.get(cache_key)
+    if cached_analysis:
+        print(f"🚀 CACHE HIT: Complete analysis from cache in <0.01s")
+        return cached_analysis['result']
     
     # Get WebSocket service for real-time updates
     ws_service = get_websocket_service()
@@ -361,13 +413,22 @@ Provide **detailed, comprehensive analysis** for optimal user experience.
             ws_service.emit_analysis_complete(session_id, response_text + timing_info, timing_info_dict)
             ws_service.emit_progress(session_id, 'complete', 100, f'✅ Analysis complete in {total_time:.2f}s!')
         
+        # Cache the complete analysis result for future requests
+        final_result = response_text + timing_info
+        try:
+            cache_data = {'result': final_result}
+            cache_manager.set(cache_key, cache_data, ttl=7200)  # Cache for 2 hours
+            print(f"💾 CACHED: Complete analysis results for future requests")
+        except Exception as e:
+            print(f"⚠️ Analysis cache storage failed: {e}")
+        
         # Enhanced cleanup for long videos
         cleanup_cache()
         if is_long_video:
             torch.cuda.empty_cache()  # Additional GPU memory cleanup for long videos
             torch.cuda.synchronize()  # Ensure all GPU operations complete
         
-        return response_text + timing_info
+        return final_result
         
     except Exception as e:
         print(f"Gemma 3 analysis error: {e}")
@@ -376,11 +437,25 @@ Provide **detailed, comprehensive analysis** for optimal user experience.
         cleanup_cache()  # Clean up on error too
         return f"Error analyzing video: {str(e)}"
 
+@measure_latency("chat_response")
 def generate_chat_response(analysis_result, analysis_type, user_focus, message, chat_history, session_id=None):
-    """Generate contextual AI response with real-time WebSocket updates"""
+    """Generate contextual AI response with real-time WebSocket updates - Round 2 Optimized"""
     import time
     start_time = time.time()
     print(f"💬 Starting chat response at {time.strftime('%H:%M:%S')}")
+    
+    # Check cache for chat response
+    cache_key = cache_manager.get_cache_key(
+        str(hash(analysis_result)), 
+        "chat", 
+        message=message,
+        chat_length=len(chat_history)
+    )
+    
+    cached_response = cache_manager.get(cache_key)
+    if cached_response:
+        print(f"🚀 CACHE HIT: Chat response from cache in <0.01s")
+        return cached_response['response']
     
     # Get WebSocket service for real-time updates
     ws_service = get_websocket_service()
@@ -507,11 +582,20 @@ Your mission is to provide **exceptional quality responses** that demonstrate de
         
         # Add timing info for chat responses
         timing_info = f"\n\n⚡ *Response generated in {chat_time:.2f}s*"
+        final_response = response_text + timing_info
+        
+        # Cache the chat response for future identical requests
+        try:
+            cache_data = {'response': final_response}
+            cache_manager.set(cache_key, cache_data, ttl=1800)  # Cache for 30 minutes
+            print(f"💾 CACHED: Chat response for future requests")
+        except Exception as e:
+            print(f"⚠️ Chat cache storage failed: {e}")
         
         # Clean up after chat
         cleanup_cache()
         
-        return response_text + timing_info
+        return final_response
         
     except Exception as e:
         print(f"Gemma 3 chat error: {e}")

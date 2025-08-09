@@ -13,6 +13,7 @@ from werkzeug.utils import secure_filename
 from config import Config
 from services.session_service import generate_session_id, store_session_data, get_session_data, cleanup_old_uploads
 from services.ai_service import analyze_video_with_gemini
+from services.performance_service import measure_latency
 from utils.video_utils import extract_video_metadata, create_evidence_for_timestamps
 from utils.text_utils import extract_timestamps_from_text, extract_timestamp_ranges_from_text
 from analysis_templates import ANALYSIS_TEMPLATES
@@ -43,6 +44,7 @@ def get_analysis_types():
     })
 
 @main_bp.route('/upload', methods=['POST'])
+@measure_latency("video_upload")
 def upload_video():
     """Handle video upload"""
     try:
@@ -126,6 +128,7 @@ def upload_video():
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 @main_bp.route('/analyze', methods=['POST'])
+@measure_latency("video_analysis_endpoint")
 def analyze_video():
     """Analyze uploaded video"""
     try:

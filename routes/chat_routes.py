@@ -10,6 +10,7 @@ from flask import Blueprint, request, jsonify, session
 from config import Config
 from services.session_service import get_session_data, store_session_data
 from services.ai_service import generate_chat_response
+from services.performance_service import measure_latency
 from utils.video_utils import create_evidence_for_timestamps
 from utils.text_utils import extract_timestamps_from_text, extract_timestamp_ranges_from_text
 
@@ -17,8 +18,9 @@ from utils.text_utils import extract_timestamps_from_text, extract_timestamp_ran
 chat_bp = Blueprint('chat', __name__)
 
 @chat_bp.route('/chat', methods=['POST'])
+@measure_latency("chat_endpoint")
 def chat():
-    """Handle chat messages with enhanced AI responses"""
+    """Handle chat messages with enhanced AI responses - Round 2 Performance Optimized"""
     try:
         data = request.get_json()
         message = data.get('message', '')

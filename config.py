@@ -25,19 +25,26 @@ class Config:
     SESSION_EXPIRY = 3600  # 1 hour in seconds
     UPLOAD_CLEANUP_TIME = 2 * 3600  # 2 hours in seconds
     
-    # Analysis Configuration - A100 Optimized for SPEED
-    MAX_OUTPUT_TOKENS = 512    # Ultra-fast for real-time
-    CHAT_MAX_TOKENS = 256      # Ultra-fast for real-time
+    # Analysis Configuration - Round 2 Optimized for Sub-1000ms Latency
+    MAX_OUTPUT_TOKENS = 256    # Ultra-fast for real-time (<1000ms target)
+    CHAT_MAX_TOKENS = 128      # Ultra-fast chat responses
     TEMPERATURE = 0.0          # Greedy decoding (fastest)
-    CHAT_TEMPERATURE = 0.0     # Greedy decoding (fastest)
+    CHAT_TEMPERATURE = 0.0     # Greedy decoding (fastest)  
     TOP_P = 0.95              # Higher for A100
-    TOP_K = 50                # Optimized for 27B model
+    TOP_K = 50                # Optimized for model
     
-    # Long Video Configuration (120min+ support)
+    # Round 2 Performance Configuration
+    TARGET_LATENCY_MS = 1000           # Sub-1000ms requirement
+    TARGET_SUCCESS_RATE = 95.0         # 95% success rate target
+    CACHE_ENABLED = True               # High-performance caching
+    PERFORMANCE_MONITORING = True      # Real-time performance tracking
+    
+    # Long Video Configuration (120min+ support with 90 FPS)
     LONG_VIDEO_THRESHOLD = 3600        # 1 hour in seconds
-    MAX_FRAMES_SHORT_VIDEO = 3         # For videos < 1 hour
-    MAX_FRAMES_LONG_VIDEO = 8          # For videos >= 1 hour (smart sampling)
+    MAX_FRAMES_SHORT_VIDEO = 2         # Reduced for speed (Round 2)
+    MAX_FRAMES_LONG_VIDEO = 4          # Reduced for speed (Round 2)
     MAX_FILE_SIZE_GB = 200             # Maximum file size in GB
+    MAX_FPS_SUPPORTED = 90             # Round 2 requirement: 90 FPS support
     
     # Default Video Configuration
     DEFAULT_VIDEO_PATH = 'BMW M4 - Ultimate Racetrack - BMW Canada (720p, h264).mp4'

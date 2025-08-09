@@ -1,13 +1,15 @@
-# 🕵️ Visual Understanding Chat Assistant
+# 🕵️ Visual Understanding Chat Assistant - Round 2 Performance Optimized
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-2.3+-green.svg)](https://flask.palletsprojects.com/)
-[![Gemini AI](https://img.shields.io/badge/Gemini%20AI-API-orange.svg)](https://aistudio.google.com/)
+[![Gemma 3](https://img.shields.io/badge/Gemma%203-Local%20Model-orange.svg)](https://huggingface.co/unsloth/gemma-3-2b-it-bnb-4bit)
 [![Redis](https://img.shields.io/badge/Redis-Cache-red.svg)](https://redis.io/)
 [![OpenCV](https://img.shields.io/badge/OpenCV-4.8+-purple.svg)](https://opencv.org/)
+[![Performance](https://img.shields.io/badge/Latency-%3C1000ms-green.svg)](benchmark_round2.py)
+[![90 FPS](https://img.shields.io/badge/Streaming-90%20FPS-blue.svg)](services/video_streaming_service.py)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Advanced Visual Understanding Chat Assistant** - An agentic AI system that processes video input, recognizes events, summarizes content, and engages in multi-turn conversations with context-aware understanding.
+> **Round 2 High-Performance Visual Understanding System** - An enterprise-grade agentic AI system optimized for sub-1000ms latency, 90 FPS video streaming, and 120-minute video processing with advanced caching and performance monitoring.
 
 ## 🚀 Live Demo & Video
 
