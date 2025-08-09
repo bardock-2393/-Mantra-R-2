@@ -12,6 +12,7 @@ from config import Config
 from routes.main_routes import main_bp
 from routes.chat_routes import chat_bp
 from routes.api_routes import api_bp
+from routes.upload_routes import upload_bp
 from services.session_service import cleanup_expired_sessions, cleanup_old_uploads
 from services.ai_service import initialize_model
 from services.websocket_service import initialize_websocket_service
@@ -46,6 +47,7 @@ def create_app():
     app.register_blueprint(main_bp)
     app.register_blueprint(chat_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(upload_bp)
     
     # WebSocket event handlers for real-time communication
     @socketio.on('connect')

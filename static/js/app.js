@@ -8,6 +8,7 @@ class VideoDetective {
         this.socket = null;
         this.currentSessionId = null;
         this.currentUploadId = null;
+        this.currentUploader = null;
         this.heartbeatInterval = null;
         this.init();
     }
@@ -406,8 +407,13 @@ class VideoDetective {
     }
     
     cancelWebSocketUpload() {
-        // Cancel active WebSocket upload
-        if (this.currentUploadId && this.socket) {
+        // Cancel active upload (HTTP or WebSocket)
+        if (this.currentUploader) {
+            // Cancel fast HTTP upload
+            this.currentUploader.cancelUpload();
+            this.currentUploader = null;
+        } else if (this.currentUploadId && this.socket) {
+            // Cancel WebSocket upload
             this.socket.emit('cancel_upload', {
                 upload_id: this.currentUploadId
             });
@@ -597,23 +603,82 @@ class VideoDetective {
     }
 
     async uploadFileWebSocket(file) {
-        // Upload file using WebSocket for real-time progress and large file support
+        // Use fast HTTP upload instead of WebSocket for better performance
         try {
-            // Start WebSocket upload process
-            await this.startWebSocketUpload();
-            
-            // Listen for upload completion to trigger analysis
-            this.socket.once('upload_completed', (data) => {
-                console.log('✅ WebSocket upload completed, starting analysis...');
-                this.showFileInfo(file, data.filename, data.file_size);
-                this.showCleanupButton();
-                this.analyzeVideo();
-            });
+            console.log('🚀 Using Fast HTTP Upload for better performance...');
+            await this.startFastHTTPUpload(file);
             
         } catch (error) {
-            console.error('WebSocket upload failed:', error);
-            this.showError('WebSocket upload failed: ' + error.message);
+            console.error('Fast upload failed, falling back to WebSocket:', error);
+            // Fallback to WebSocket upload
+            try {
+                await this.startWebSocketUpload();
+                
+                this.socket.once('upload_completed', (data) => {
+                    console.log('✅ WebSocket upload completed, starting analysis...');
+                    this.showFileInfo(file, data.filename, data.file_size);
+                    this.showCleanupButton();
+                    this.analyzeVideo();
+                });
+                
+            } catch (wsError) {
+                console.error('WebSocket upload also failed:', wsError);
+                this.showError('Upload failed: ' + wsError.message);
+            }
         }
+    }
+    
+    async startFastHTTPUpload(file) {
+        // Fast HTTP chunked upload implementation
+        const uploader = new FastUploader();
+        
+        // Show upload progress UI
+        this.showUploadProgress();
+        
+        // Configure upload callbacks
+        const uploadOptions = {
+            maxConcurrent: 6, // Parallel uploads for speed
+            
+            onProgress: (data) => {
+                this.updateUploadProgress({
+                    progress: data.progress,
+                    bytes_received: data.bytes_uploaded,
+                    total_size: data.total_size,
+                    upload_speed: data.upload_speed,
+                    chunks_received: data.chunks_uploaded
+                });
+            },
+            
+            onComplete: (data) => {
+                console.log('✅ Fast HTTP upload completed:', data);
+                this.stopUploadHeartbeat();
+                this.hideUploadProgress();
+                this.showSuccess(`Upload completed: ${data.filename} (${data.average_speed.toFixed(1)}MB/s avg)`);
+                
+                // Set up for analysis
+                this.currentFilePath = data.file_path;
+                this.showFileInfo(file, data.filename, data.total_size);
+                this.showCleanupButton();
+                this.enableAnalysisButtons();
+                this.analyzeVideo();
+            },
+            
+            onError: (error) => {
+                console.error('❌ Fast HTTP upload error:', error);
+                this.stopUploadHeartbeat();
+                this.hideUploadProgress();
+                this.showError(`Upload failed: ${error.message}`);
+            }
+        };
+        
+        // Start heartbeat for connection stability
+        this.startUploadHeartbeat();
+        
+        // Start the upload
+        await uploader.startUpload(file, uploadOptions);
+        
+        // Store uploader instance for cancellation
+        this.currentUploader = uploader;
     }
 
     async uploadFile(file) {
