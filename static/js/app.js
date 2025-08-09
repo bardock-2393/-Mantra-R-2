@@ -196,6 +196,13 @@ class VideoDetective {
         this.initializeWebSocketUpload();
     }
     
+    // === SESSION MANAGEMENT ===
+    
+    generateSessionId() {
+        // Generate a unique session ID
+        return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+    
     // === WEBSOCKET UPLOAD METHODS ===
     
     initializeWebSocketUpload() {
@@ -227,7 +234,10 @@ class VideoDetective {
         this.socket.on('upload_error', (data) => {
             console.error('❌ Upload error:', data);
             this.hideUploadProgress();
-            this.showError(data.error);
+            this.showError(`Upload failed: ${data.error}`);
+            
+            // Reset upload state
+            this.currentUploadId = null;
         });
         
         this.socket.on('upload_cancelled', (data) => {
@@ -255,21 +265,48 @@ class VideoDetective {
         }
         
         try {
+            // Ensure we have a session ID
+            if (!this.currentSessionId) {
+                this.currentSessionId = this.generateSessionId();
+                console.log('🔄 Generated new session ID:', this.currentSessionId);
+            }
+            
+            // Join the session for real-time updates
+            this.socket.emit('join_session', { session_id: this.currentSessionId });
+            
             // Show upload progress UI
             this.showUploadProgress();
             
-            // Initialize upload session
-            this.socket.emit('start_upload', {
-                session_id: this.sessionId,
+            console.log('📤 Starting WebSocket upload:', {
+                session_id: this.currentSessionId,
                 filename: this.currentFile.name,
                 file_size: this.currentFile.size,
                 file_type: this.currentFile.type
             });
             
-            // Wait for upload_ready event before starting chunk upload
+            // Initialize upload session
+            this.socket.emit('start_upload', {
+                session_id: this.currentSessionId,
+                filename: this.currentFile.name,
+                file_size: this.currentFile.size,
+                file_type: this.currentFile.type
+            });
+            
+            // Wait for upload_ready event before starting chunk upload (with timeout)
+            const uploadTimeout = setTimeout(() => {
+                this.hideUploadProgress();
+                this.showError('Upload initialization timeout. Please try again.');
+            }, 10000); // 10 second timeout
+            
             this.socket.once('upload_ready', (data) => {
+                clearTimeout(uploadTimeout);
                 this.currentUploadId = data.upload_id;
                 this.uploadFileInChunks();
+            });
+            
+            this.socket.once('upload_error', (data) => {
+                clearTimeout(uploadTimeout);
+                // Error handling is already set up in initializeWebSocketUpload
             });
             
         } catch (error) {
