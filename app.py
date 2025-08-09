@@ -25,15 +25,18 @@ def create_app():
     app.config['UPLOAD_FOLDER'] = Config.UPLOAD_FOLDER
     app.config['MAX_CONTENT_LENGTH'] = Config.MAX_CONTENT_LENGTH
     
-    # Initialize SocketIO for lightning-fast real-time communication
+    # Initialize SocketIO for lightning-fast real-time communication with large file upload optimization
     socketio = SocketIO(
         app,
         cors_allowed_origins="*",
         async_mode='threading',  # Compatible async mode for Python 3.13
         logger=True,
         engineio_logger=False,
-        ping_timeout=60,
-        ping_interval=25
+        ping_timeout=120,  # Increased for large file uploads
+        ping_interval=30,  # More stable interval
+        max_http_buffer_size=2 * 1024 * 1024,  # 2MB buffer for chunks
+        allow_upgrades=True,
+        transports=['websocket', 'polling']  # Fallback transport
     )
     
     # Initialize WebSocket service

@@ -7,6 +7,8 @@ class VideoDetective {
         this.isTyping = false;
         this.socket = null;
         this.currentSessionId = null;
+        this.currentUploadId = null;
+        this.heartbeatInterval = null;
         this.init();
     }
 
@@ -43,6 +45,21 @@ class VideoDetective {
         this.socket.on('disconnect', () => {
             console.log('🔌 Disconnected from WebSocket');
             this.showNotification('Real-time connection lost', 'warning');
+            
+            // If upload is in progress, show reconnection message
+            if (this.currentUploadId) {
+                this.showNotification('Upload in progress - attempting to reconnect...', 'info');
+            }
+        });
+        
+        this.socket.on('reconnect', () => {
+            console.log('🔄 WebSocket reconnected');
+            this.showNotification('Real-time connection restored', 'success');
+            
+            // Rejoin session if we have one
+            if (this.currentSessionId) {
+                this.socket.emit('join_session', { session_id: this.currentSessionId });
+            }
         });
         
         // Analysis progress updates
@@ -225,14 +242,17 @@ class VideoDetective {
         
         this.socket.on('upload_completed', (data) => {
             console.log('✅ Upload completed:', data);
+            this.stopUploadHeartbeat();
             this.hideUploadProgress();
             this.showSuccess(data.message);
             this.currentFilePath = data.file_path;
+            this.currentUploadId = null;
             this.enableAnalysisButtons();
         });
         
         this.socket.on('upload_error', (data) => {
             console.error('❌ Upload error:', data);
+            this.stopUploadHeartbeat();
             this.hideUploadProgress();
             this.showError(`Upload failed: ${data.error}`);
             
@@ -242,8 +262,10 @@ class VideoDetective {
         
         this.socket.on('upload_cancelled', (data) => {
             console.log('🚫 Upload cancelled:', data);
+            this.stopUploadHeartbeat();
             this.hideUploadProgress();
             this.showNotification(data.message, 'warning');
+            this.currentUploadId = null;
         });
         
         this.socket.on('chunk_received', (data) => {
@@ -301,6 +323,7 @@ class VideoDetective {
             this.socket.once('upload_ready', (data) => {
                 clearTimeout(uploadTimeout);
                 this.currentUploadId = data.upload_id;
+                this.startUploadHeartbeat();
                 this.uploadFileInChunks();
             });
             
@@ -364,6 +387,7 @@ class VideoDetective {
             });
             this.currentUploadId = null;
         }
+        this.stopUploadHeartbeat();
         this.hideUploadProgress();
     }
     
@@ -443,6 +467,23 @@ class VideoDetective {
         
         if (analyzeBtn) analyzeBtn.disabled = false;
         if (uploadBtn) uploadBtn.textContent = '✅ Ready to Analyze';
+    }
+    
+    startUploadHeartbeat() {
+        // Start heartbeat to keep connection alive during upload
+        this.heartbeatInterval = setInterval(() => {
+            if (this.socket && this.socket.connected && this.currentUploadId) {
+                this.socket.emit('ping');
+            }
+        }, 15000); // Ping every 15 seconds during upload
+    }
+    
+    stopUploadHeartbeat() {
+        // Stop heartbeat when upload is complete
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
     }
 
     isValidVideoFile(file) {
