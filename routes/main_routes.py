@@ -161,9 +161,10 @@ def analyze_video():
         timestamps = extract_timestamps_from_text(analysis_result)
         evidence = []
         
-        if timestamps:
-            # Create evidence (screenshots or video clips) based on timeframe length
-            evidence = create_evidence_for_timestamps(timestamps, video_path, session_id, Config.UPLOAD_FOLDER)
+        # COMMENTED OUT FOR PERFORMANCE TESTING
+        # if timestamps:
+        #     # Create evidence (screenshots or video clips) based on timeframe length
+        #     evidence = create_evidence_for_timestamps(timestamps, video_path, session_id, Config.UPLOAD_FOLDER)
         
         # Store analysis results and evidence in session
         analysis_data = {

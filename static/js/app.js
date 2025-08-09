@@ -567,11 +567,12 @@ class VideoDetective {
                 this.addChatMessageWithTyping('ai', result.response);
                 
                 // Display additional evidence if available (after message appears)
-                if (result.additional_screenshots && result.additional_screenshots.length > 0) {
-                    setTimeout(() => {
-                        this.displayEvidence(result.additional_screenshots, 'Additional Evidence');
-                    }, 800); // Wait for fade-in effect to complete + buffer
-                }
+                // COMMENTED OUT FOR PERFORMANCE TESTING
+                // if (result.additional_screenshots && result.additional_screenshots.length > 0) {
+                //     setTimeout(() => {
+                //         this.displayEvidence(result.additional_screenshots, 'Additional Evidence');
+                //     }, 800); // Wait for fade-in effect to complete + buffer
+                // }
             } else {
                 this.addChatMessage('ai', 'Sorry, I encountered an error. Please try again.');
             }
