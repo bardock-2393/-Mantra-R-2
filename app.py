@@ -60,6 +60,6 @@ if __name__ == '__main__':
     print("🚀 AI Video Detective Starting...")
     print(f"📁 Upload folder: {Config.UPLOAD_FOLDER}")
     print(f"🔗 Redis URL: {Config.REDIS_URL}")
-    print(f"🤖 Gemini API: {'Configured' if Config.GOOGLE_API_KEY else 'Not configured'}")
+    print(f"🤖 AI Model: Gemma 3 (Local Processing)")
     
     app.run(host='0.0.0.0', port=5000, debug=True) 
