@@ -199,7 +199,7 @@ class VideoDetective {
     // === WEBSOCKET UPLOAD METHODS ===
     
     initializeWebSocketUpload() {
-        """Initialize WebSocket upload event listeners"""
+        // Initialize WebSocket upload event listeners
         if (!this.socket) {
             console.error('WebSocket not connected');
             return;
@@ -243,7 +243,7 @@ class VideoDetective {
     }
     
     async startWebSocketUpload() {
-        """Start WebSocket-based file upload"""
+        // Start WebSocket-based file upload
         if (!this.currentFile) {
             this.showError('No file selected');
             return;
@@ -280,7 +280,7 @@ class VideoDetective {
     }
     
     async uploadFileInChunks() {
-        """Upload file in chunks via WebSocket"""
+        // Upload file in chunks via WebSocket
         const CHUNK_SIZE = 1024 * 1024; // 1MB chunks for optimal performance
         const file = this.currentFile;
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
@@ -320,7 +320,7 @@ class VideoDetective {
     }
     
     cancelWebSocketUpload() {
-        """Cancel active WebSocket upload"""
+        // Cancel active WebSocket upload
         if (this.currentUploadId && this.socket) {
             this.socket.emit('cancel_upload', {
                 upload_id: this.currentUploadId
@@ -331,7 +331,7 @@ class VideoDetective {
     }
     
     fileToBase64(file) {
-        """Convert file chunk to base64"""
+        // Convert file chunk to base64
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => {
@@ -345,7 +345,7 @@ class VideoDetective {
     }
     
     showUploadProgress() {
-        """Show upload progress UI"""
+        // Show upload progress UI
         const uploadArea = document.getElementById('uploadArea');
         
         // Create progress UI if it doesn't exist
@@ -379,7 +379,7 @@ class VideoDetective {
     }
     
     updateUploadProgress(data) {
-        """Update upload progress display"""
+        // Update upload progress display
         const progressFill = document.getElementById('progressFill');
         const progressText = document.getElementById('progressText');
         const uploadDetails = document.getElementById('uploadDetails');
@@ -392,7 +392,7 @@ class VideoDetective {
     }
     
     hideUploadProgress() {
-        """Hide upload progress UI"""
+        // Hide upload progress UI
         const uploadProgress = document.getElementById('uploadProgress');
         if (uploadProgress) {
             uploadProgress.style.display = 'none';
@@ -400,7 +400,7 @@ class VideoDetective {
     }
     
     enableAnalysisButtons() {
-        """Enable analysis buttons after successful upload"""
+        // Enable analysis buttons after successful upload
         const analyzeBtn = document.getElementById('analyzeBtn');
         const uploadBtn = document.getElementById('uploadBtn');
         
@@ -468,7 +468,7 @@ class VideoDetective {
     }
 
     async uploadFileWebSocket(file) {
-        """Upload file using WebSocket for real-time progress and large file support"""
+        // Upload file using WebSocket for real-time progress and large file support
         try {
             // Start WebSocket upload process
             await this.startWebSocketUpload();
@@ -488,7 +488,7 @@ class VideoDetective {
     }
 
     async uploadFile(file) {
-        """Legacy HTTP upload method (fallback for small files/demos)"""
+        // Legacy HTTP upload method (fallback for small files/demos)
         const formData = new FormData();
         formData.append('video', file);
 
