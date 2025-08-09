@@ -65,8 +65,7 @@ def initialize_model():
                 device_map="auto",
                 torch_dtype=torch.bfloat16,  # A100 supports bfloat16 natively
                 trust_remote_code=True,
-                low_cpu_mem_usage=True,
-                torch_dtype_override=torch.bfloat16
+                low_cpu_mem_usage=True
             ).eval()
             
             processor = AutoProcessor.from_pretrained(model_id)
