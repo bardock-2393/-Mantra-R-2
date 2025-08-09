@@ -10,57 +10,76 @@ from PIL import Image
 import cv2
 import os
 import tempfile
+import shutil
 from config import Config
 from analysis_templates import generate_analysis_prompt
 
-# Initialize Gemma 3 model - Optimized for A100 80GB
-model_id = "google/gemma-3-27b-it"  # Upgraded to 27B for A100
+# Disable compilation to save disk space
+os.environ['TORCHDYNAMO_DISABLE'] = '1'
+os.environ['TORCH_COMPILE_DISABLE'] = '1'
+
+# Initialize Gemma 3 model - Optimized for A100 80GB with space constraints
+model_id = "google/gemma-3-12b-it"  # Use 12B to avoid disk space issues
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Global variables for model and processor (lazy loading)
 model = None
 processor = None
 
+def cleanup_cache():
+    """Clean up cache and temporary files to free disk space"""
+    try:
+        # Clean up /tmp directory
+        for item in os.listdir('/tmp'):
+            if item.startswith('torch') or item.startswith('torchinductor'):
+                try:
+                    path = os.path.join('/tmp', item)
+                    if os.path.isdir(path):
+                        shutil.rmtree(path)
+                    else:
+                        os.remove(path)
+                except:
+                    pass
+        print("✅ Cleaned up temporary files")
+    except Exception as e:
+        print(f"Cache cleanup warning: {e}")
+
 def initialize_model():
-    """Initialize Gemma 3 model and processor - A100 Optimized"""
+    """Initialize Gemma 3 model and processor - A100 Optimized with space management"""
     global model, processor
     if model is None:
-        print("Loading Gemma 3 27B model for A100...")
+        print("Loading Gemma 3 12B model for A100...")
+        
+        # Clean up cache first
+        cleanup_cache()
+        
         try:
-            # A100 optimized settings
+            # A100 optimized settings without compilation
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
             torch.set_float32_matmul_precision('high')
             
+            # Use low_cpu_mem_usage to reduce memory pressure
             model = Gemma3ForConditionalGeneration.from_pretrained(
                 model_id, 
                 device_map="auto",
                 torch_dtype=torch.bfloat16,  # A100 supports bfloat16 natively
-                trust_remote_code=True
+                trust_remote_code=True,
+                low_cpu_mem_usage=True,
+                torch_dtype_override=torch.bfloat16
             ).eval()
             
             processor = AutoProcessor.from_pretrained(model_id)
             
-            # Compile model for faster inference (PyTorch 2.0+)
-            if hasattr(torch, 'compile'):
-                print("Compiling model for A100 optimization...")
-                model = torch.compile(model, mode="reduce-overhead")
-            
-            print(f"✅ Gemma 3 27B model loaded successfully on A100")
-            print(f"📊 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB")
+            # Skip compilation to save disk space
+            print("✅ Gemma 3 12B model loaded successfully on A100 (compilation disabled)")
+            if torch.cuda.is_available():
+                print(f"📊 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB")
+                print(f"📊 GPU Memory Allocated: {torch.cuda.memory_allocated() / 1e9:.1f}GB")
             
         except Exception as e:
-            print(f"Error loading Gemma 3 27B model: {e}")
-            print("Falling back to 12B model...")
-            # Fallback to 12B model
-            model_id_fallback = "google/gemma-3-12b-it"
-            model = Gemma3ForConditionalGeneration.from_pretrained(
-                model_id_fallback, 
-                device_map="auto",
-                torch_dtype=torch.bfloat16
-            ).eval()
-            processor = AutoProcessor.from_pretrained(model_id_fallback)
-            print("Gemma 3 12B model loaded as fallback")
+            print(f"Error loading Gemma 3 12B model: {e}")
+            raise e
 
 def extract_video_frames(video_path, num_frames=16):
     """Extract frames from video for analysis - A100 Optimized"""
@@ -102,9 +121,12 @@ async def analyze_video_with_gemini(video_path, analysis_type, user_focus):
         # Generate analysis prompt based on type and user focus
         analysis_prompt = generate_analysis_prompt(analysis_type, user_focus)
         
-        # Extract frames from video
+        # Clean up before analysis
+        cleanup_cache()
+        
+        # Extract frames from video (reduced for space efficiency)
         print('Extracting frames from video...')
-        frames, timestamps, duration = extract_video_frames(video_path, num_frames=10)
+        frames, timestamps, duration = extract_video_frames(video_path, num_frames=6)
         
         if not frames:
             raise ValueError("No frames could be extracted from the video")
@@ -165,8 +187,8 @@ You are analyzing a video with duration {duration:.2f} seconds. The frames provi
             }
         ]
         
-        # A100 Optimization: Process more frames with batching
-        for i, frame in enumerate(frames[1:8], 1):  # Use 8 frames for A100
+        # Process frames efficiently (reduced for disk space)
+        for i, frame in enumerate(frames[1:3], 1):  # Use only 3 frames to save space
             messages[-1]["content"].append({"type": "image", "image": frame})
             messages[-1]["content"].append({"type": "text", "text": f"Frame at {timestamps[i]:.2f}s:"})
         
@@ -180,11 +202,11 @@ You are analyzing a video with duration {duration:.2f} seconds. The frames provi
         
         input_len = inputs["input_ids"].shape[-1]
         
-        # A100 optimized generation settings
+        # A100 optimized generation settings (reduced tokens to save space)
         with torch.inference_mode():
             generation = model.generate(
                 **inputs, 
-                max_new_tokens=Config.MAX_OUTPUT_TOKENS,
+                max_new_tokens=min(Config.MAX_OUTPUT_TOKENS, 16384),  # Limit tokens to save space
                 temperature=Config.TEMPERATURE,
                 top_p=Config.TOP_P,
                 do_sample=True if Config.TEMPERATURE > 0 else False,
@@ -194,15 +216,23 @@ You are analyzing a video with duration {duration:.2f} seconds. The frames provi
             generation = generation[0][input_len:]
         
         response_text = processor.decode(generation, skip_special_tokens=True)
+        
+        # Clean up after generation
+        cleanup_cache()
+        
         return response_text
         
     except Exception as e:
         print(f"Gemma 3 analysis error: {e}")
+        cleanup_cache()  # Clean up on error too
         return f"Error analyzing video: {str(e)}"
 
 def generate_chat_response(analysis_result, analysis_type, user_focus, message, chat_history):
     """Generate contextual AI response based on video analysis using Gemma 3"""
     try:
+        # Clean up before chat
+        cleanup_cache()
+        
         # Initialize model if not already loaded
         initialize_model()
         
@@ -317,8 +347,13 @@ Your mission is to provide **exceptional quality responses** that demonstrate de
             generation = generation[0][input_len:]
         
         response_text = processor.decode(generation, skip_special_tokens=True)
+        
+        # Clean up after chat
+        cleanup_cache()
+        
         return response_text
         
     except Exception as e:
         print(f"Gemma 3 chat error: {e}")
+        cleanup_cache()  # Clean up on error too
         return f"I apologize, but I'm experiencing technical difficulties accessing the video analysis. As an advanced AI video analysis agent, I'm designed to provide comprehensive insights about your video content. Please try asking your question again, or if the issue persists, you may need to re-analyze the video to restore full agentic capabilities." 
