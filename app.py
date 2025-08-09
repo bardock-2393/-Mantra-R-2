@@ -12,7 +12,6 @@ from config import Config
 from routes.main_routes import main_bp
 from routes.chat_routes import chat_bp
 from routes.api_routes import api_bp
-from routes.upload_routes import upload_bp
 from services.session_service import cleanup_expired_sessions, cleanup_old_uploads
 from services.ai_service import initialize_model
 from services.websocket_service import initialize_websocket_service
@@ -24,7 +23,8 @@ def create_app():
     # Configure Flask
     app.secret_key = Config.SECRET_KEY
     app.config['UPLOAD_FOLDER'] = Config.UPLOAD_FOLDER
-    app.config['MAX_CONTENT_LENGTH'] = Config.MAX_CONTENT_LENGTH
+    # Remove MAX_CONTENT_LENGTH for streaming uploads - handled per endpoint
+    # app.config['MAX_CONTENT_LENGTH'] = Config.MAX_CONTENT_LENGTH
     
     # Initialize SocketIO for lightning-fast real-time communication
     socketio = SocketIO(
@@ -44,7 +44,6 @@ def create_app():
     app.register_blueprint(main_bp)
     app.register_blueprint(chat_bp)
     app.register_blueprint(api_bp)
-    app.register_blueprint(upload_bp)
     
     # WebSocket event handlers for real-time communication
     @socketio.on('connect')

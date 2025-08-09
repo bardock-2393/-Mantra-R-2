@@ -251,149 +251,181 @@ class VideoDetective {
             await this.uploadDemoVideo();
         }
     }
-    
-    // === STREAMING UPLOAD METHODS ===
-    
+
     async uploadFileStreaming(file) {
         /**
-         * Upload file using streaming upload system for large files
+         * High-performance streaming upload for large files (2GB+)
+         * Uses 16MB chunks with 4 parallel uploads for maximum speed
          */
+        const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB chunks
+        const MAX_PARALLEL = 4; // Parallel uploads
+        
         try {
-            console.log('🚀 Starting streaming upload for large file...');
-            
-            // Create uploader instance
-            const uploader = new StreamingUploader({
-                chunkSize: 16 * 1024 * 1024, // 16MB chunks
-                maxParallel: 6,              // Parallel uploads
-                
-                onStarted: (data) => {
-                    console.log('📋 Streaming upload started:', data);
-                    this.showUploadProgress();
-                },
-                
-                onProgress: (data) => {
-                    this.updateStreamingProgress(data);
-                },
-                
-                onComplete: (data) => {
-                    console.log('✅ Streaming upload completed:', data);
-                    this.hideUploadProgress();
-                    this.currentFilePath = data.file_path;
-                    this.showFileInfo(file, data.filename, data.size);
-                    this.showCleanupButton();
-                    this.enableAnalysisButtons();
-                    this.analyzeVideo(); // Auto-start analysis
-                },
-                
-                onError: (error) => {
-                    console.error('❌ Streaming upload failed:', error);
-                    this.hideUploadProgress();
-                    this.showError(`Upload failed: ${error.message}`);
-                }
+            console.log('🚀 Starting streaming upload for large file...', {
+                name: file.name,
+                size: `${(file.size / (1024**3)).toFixed(2)}GB`,
+                chunks: Math.ceil(file.size / CHUNK_SIZE)
             });
             
-            // Store uploader for cancellation
-            this.currentUploader = uploader;
+            this.showStreamingProgress();
             
-            // Start the upload
-            await uploader.startUpload(file);
+            // Step 1: Initialize upload
+            const initResponse = await fetch('/upload/init', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    filename: file.name, 
+                    size: file.size 
+                })
+            });
+            
+            if (!initResponse.ok) {
+                const error = await initResponse.json();
+                throw new Error(error.error || 'Upload initialization failed');
+            }
+            
+            const { upload_id, session_id } = await initResponse.json();
+            console.log('📋 Upload initialized:', { upload_id, session_id });
+            
+            // Step 2: Upload chunks in parallel
+            const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+            let nextChunk = 0;
+            let uploadedBytes = 0;
+            const startTime = Date.now();
+            
+            // Create parallel workers
+            const workers = Array(MAX_PARALLEL).fill(0).map(() => this.streamingWorker(
+                file, upload_id, CHUNK_SIZE, totalChunks, 
+                () => nextChunk++, 
+                (bytes) => {
+                    uploadedBytes += bytes;
+                    this.updateStreamingProgress(uploadedBytes, file.size, startTime);
+                }
+            ));
+            
+            // Wait for all chunks to complete
+            await Promise.all(workers);
+            
+            // Step 3: Complete upload
+            const completeResponse = await fetch(`/upload/${upload_id}/complete`, {
+                method: 'POST'
+            });
+            
+            if (!completeResponse.ok) {
+                const error = await completeResponse.json();
+                throw new Error(error.error || 'Upload completion failed');
+            }
+            
+            const result = await completeResponse.json();
+            console.log('✅ Streaming upload completed:', result);
+            
+            this.hideStreamingProgress();
+            this.currentFilePath = result.path;
+            this.showFileInfo(file, result.filename, result.size);
+            this.enableAnalysisButtons();
+            
+            // Auto-start analysis
+            await this.analyzeVideo();
             
         } catch (error) {
-            console.error('Streaming upload error:', error);
+            console.error('❌ Streaming upload failed:', error);
+            this.hideStreamingProgress();
             this.showError(`Upload failed: ${error.message}`);
-            this.hideUploadProgress();
         }
     }
     
-    updateStreamingProgress(data) {
+    async streamingWorker(file, uploadId, chunkSize, totalChunks, getNextChunk, onProgress) {
         /**
-         * Update streaming upload progress with detailed metrics
+         * Worker function for parallel chunk uploads
          */
-        const progressFill = document.getElementById('progressFill');
-        const progressText = document.getElementById('progressText');
-        const uploadDetails = document.getElementById('uploadDetails');
-        const percentageDisplay = document.getElementById('percentageDisplay');
-        const progressPercentage = document.getElementById('progressPercentage');
-        
-        const percentage = data.progress.toFixed(1);
-        
-        if (progressFill) {
-            progressFill.style.width = `${percentage}%`;
+        while (true) {
+            const chunkIndex = getNextChunk();
+            if (chunkIndex >= totalChunks) break;
+            
+            const start = chunkIndex * chunkSize;
+            const end = Math.min(start + chunkSize, file.size) - 1;
+            const blob = file.slice(start, end + 1);
+            
+            const response = await fetch(`/upload/${uploadId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Range': `bytes ${start}-${end}/${file.size}`
+                },
+                body: blob
+            });
+            
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(`Chunk ${chunkIndex} failed: ${error}`);
+            }
+            
+            onProgress(blob.size);
+            console.log(`📊 Chunk ${chunkIndex + 1}/${totalChunks} uploaded (${start}-${end})`);
         }
-        
-        if (percentageDisplay) {
-            percentageDisplay.textContent = `${percentage}%`;
-        }
-        
-        if (progressPercentage) {
-            progressPercentage.textContent = `${percentage}%`;
-            progressPercentage.style.display = data.progress > 10 ? 'block' : 'none';
-        }
-        
-        if (progressText) {
-            progressText.textContent = `${data.uploadSpeed.toFixed(1)} MB/s`;
-        }
-        
-        if (uploadDetails) {
-            const uploadedMB = (data.uploadedBytes / (1024**2)).toFixed(1);
-            const totalMB = (data.totalSize / (1024**2)).toFixed(1);
-            const elapsedMin = (data.elapsedTime / 60).toFixed(1);
-            uploadDetails.textContent = `${uploadedMB}MB / ${totalMB}MB • ${elapsedMin}min elapsed`;
-        }
-        
-        console.log(`📊 Streaming Progress: ${percentage}% (${data.uploadSpeed.toFixed(1)} MB/s)`);
     }
     
-    showUploadProgress() {
+    showStreamingProgress() {
         /**
          * Show streaming upload progress UI
          */
         const uploadArea = document.getElementById('uploadArea');
         
-        // Create progress UI if it doesn't exist
-        if (!document.getElementById('uploadProgress')) {
-            const progressHTML = `
-                <div id="uploadProgress" class="upload-progress">
-                    <div class="progress-header">
-                        <h3>🚀 Streaming Upload...</h3>
-                        <div id="percentageDisplay" class="percentage-display">0%</div>
-                        <button id="cancelUploadBtn" class="cancel-btn">❌ Cancel</button>
-                    </div>
-                    <div class="progress-bar-container">
-                        <div id="progressBar" class="progress-bar">
-                            <div id="progressFill" class="progress-fill">
-                                <div id="progressPercentage" class="progress-percentage">0%</div>
-                            </div>
-                        </div>
-                        <div id="progressText" class="progress-text">0 MB/s</div>
-                    </div>
-                    <div id="uploadDetails" class="upload-details">
-                        Initializing streaming upload...
-                    </div>
+        const progressHTML = `
+            <div id="streamingProgress" class="streaming-progress">
+                <div class="progress-header">
+                    <h3>🚀 High-Speed Streaming Upload</h3>
+                    <div id="streamingPercentage" class="percentage-display">0%</div>
                 </div>
-            `;
-            uploadArea.insertAdjacentHTML('afterend', progressHTML);
-            
-            // Add cancel button handler
-            document.getElementById('cancelUploadBtn').addEventListener('click', () => {
-                if (this.currentUploader) {
-                    this.currentUploader.cancelUpload();
-                    this.currentUploader = null;
-                }
-                this.hideUploadProgress();
-            });
-        }
+                <div class="progress-bar-container">
+                    <div class="progress-bar">
+                        <div id="streamingProgressBar" class="progress-fill" style="width: 0%">
+                            <div id="streamingProgressText" class="progress-percentage">0%</div>
+                        </div>
+                    </div>
+                    <div id="streamingSpeed" class="progress-text">0 MB/s</div>
+                </div>
+                <div id="streamingDetails" class="upload-details">
+                    Initializing 16MB chunked upload with 4 parallel streams...
+                </div>
+            </div>
+        `;
         
-        document.getElementById('uploadProgress').style.display = 'block';
+        uploadArea.insertAdjacentHTML('afterend', progressHTML);
+        document.getElementById('streamingProgress').style.display = 'block';
     }
     
-    hideUploadProgress() {
+    updateStreamingProgress(uploadedBytes, totalBytes, startTime) {
         /**
-         * Hide upload progress UI
+         * Update streaming progress with real-time metrics
          */
-        const uploadProgress = document.getElementById('uploadProgress');
-        if (uploadProgress) {
-            uploadProgress.style.display = 'none';
+        const percentage = (uploadedBytes / totalBytes * 100).toFixed(1);
+        const elapsedSeconds = (Date.now() - startTime) / 1000;
+        const speedMBps = (uploadedBytes / (1024**2)) / elapsedSeconds;
+        const uploadedMB = (uploadedBytes / (1024**2)).toFixed(1);
+        const totalMB = (totalBytes / (1024**2)).toFixed(1);
+        
+        const progressBar = document.getElementById('streamingProgressBar');
+        const progressText = document.getElementById('streamingProgressText');
+        const percentageDisplay = document.getElementById('streamingPercentage');
+        const speedDisplay = document.getElementById('streamingSpeed');
+        const detailsDisplay = document.getElementById('streamingDetails');
+        
+        if (progressBar) progressBar.style.width = `${percentage}%`;
+        if (progressText) progressText.textContent = `${percentage}%`;
+        if (percentageDisplay) percentageDisplay.textContent = `${percentage}%`;
+        if (speedDisplay) speedDisplay.textContent = `${speedMBps.toFixed(1)} MB/s`;
+        if (detailsDisplay) {
+            detailsDisplay.textContent = `${uploadedMB}MB / ${totalMB}MB • ${speedMBps.toFixed(1)} MB/s • ${elapsedSeconds.toFixed(0)}s elapsed`;
+        }
+    }
+    
+    hideStreamingProgress() {
+        /**
+         * Hide streaming progress UI
+         */
+        const streamingProgress = document.getElementById('streamingProgress');
+        if (streamingProgress) {
+            streamingProgress.remove();
         }
     }
     
@@ -408,15 +440,15 @@ class VideoDetective {
         if (uploadBtn) uploadBtn.textContent = '✅ Ready to Analyze';
     }
 
-          async uploadFile(file) {
-          // Use streaming upload for better performance with large files
-          if (Config.STREAM_UPLOAD_ENABLED !== false) {
-              return await this.uploadFileStreaming(file);
-          }
-          
-          // Fallback to traditional upload for small files
-          const formData = new FormData();
-          formData.append('video', file);
+    async uploadFile(file) {
+        // Use streaming upload for files larger than 100MB
+        if (file.size > 100 * 1024 * 1024) {
+            return await this.uploadFileStreaming(file);
+        }
+        
+        // Traditional upload for smaller files
+        const formData = new FormData();
+        formData.append('video', file);
 
         try {
             this.showProgress();

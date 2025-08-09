@@ -7,6 +7,7 @@ import os
 import json
 import uuid
 import shutil
+import re
 from datetime import datetime
 from flask import Blueprint, render_template, request, jsonify, session, send_file
 from werkzeug.utils import secure_filename
@@ -21,9 +22,47 @@ from analysis_templates import ANALYSIS_TEMPLATES
 # Create Blueprint
 main_bp = Blueprint('main', __name__)
 
+# Streaming upload configuration
+RANGE_RE = re.compile(r"bytes (\d+)-(\d+)/(\d+)")
+
 def allowed_file(filename):
     """Check if file extension is allowed"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in Config.ALLOWED_EXTENSIONS
+
+def state_path(upload_id):
+    """Get upload state file path"""
+    return os.path.join(Config.UPLOAD_FOLDER, f"{upload_id}.json")
+
+def temp_path(upload_id):
+    """Get temporary upload file path"""
+    return os.path.join(Config.UPLOAD_FOLDER, f"{upload_id}.part")
+
+def load_state(upload_id):
+    """Load upload state from disk"""
+    p = state_path(upload_id)
+    if os.path.exists(p):
+        with open(p, "r") as f:
+            return json.load(f)
+    return None
+
+def save_state(upload_id, state):
+    """Save upload state to disk"""
+    with open(state_path(upload_id), "w") as f:
+        json.dump(state, f)
+
+def merge_ranges(ranges):
+    """Merge overlapping byte ranges"""
+    if not ranges:
+        return []
+    ranges = sorted(ranges, key=lambda x: x[0])
+    merged = [ranges[0]]
+    for s, e in ranges[1:]:
+        last = merged[-1]
+        if s <= last[1] + 1:
+            last[1] = max(last[1], e)
+        else:
+            merged.append([s, e])
+    return merged
 
 @main_bp.route('/')
 def index():
@@ -42,6 +81,211 @@ def get_analysis_types():
         'analysis_types': ANALYSIS_TEMPLATES,
         'success': True
     })
+
+# === STREAMING UPLOAD ENDPOINTS ===
+
+@main_bp.route('/upload/init', methods=['POST'])
+@measure_latency("streaming_upload_init")
+def init_streaming_upload():
+    """Initialize streaming upload for large files"""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        filename = secure_filename(data.get("filename", "file.bin"))
+        
+        if not allowed_file(filename):
+            return jsonify({"error": "Invalid file type"}), 400
+            
+        total = int(data.get("size", 0))
+        if total > Config.MAX_CONTENT_LENGTH:
+            return jsonify({"error": f"File too large. Max size: {Config.MAX_CONTENT_LENGTH} bytes"}), 413
+            
+        upload_id = uuid.uuid4().hex
+        session_id = session.get('session_id', generate_session_id())
+        session['session_id'] = session_id
+        
+        # Create unique filename with session
+        name, ext = os.path.splitext(filename)
+        unique_filename = f"{session_id}_{name}_{uuid.uuid4().hex[:8]}{ext}"
+        final_path = os.path.join(Config.UPLOAD_FOLDER, unique_filename)
+        
+        state = {
+            "upload_id": upload_id,
+            "session_id": session_id,
+            "filename": filename,
+            "unique_filename": unique_filename,
+            "total": total,
+            "received": [],  # list of [start, end]
+            "final_path": final_path,
+            "temp_path": temp_path(upload_id),
+            "created_at": datetime.now().isoformat()
+        }
+        
+        save_state(upload_id, state)
+        
+        # Create empty file to enable random-access writes
+        with open(state["temp_path"], "wb") as f:
+            if total > 0:
+                f.truncate(total)
+                
+        print(f"🚀 Streaming upload initialized: {upload_id} ({filename}, {total} bytes)")
+        
+        return jsonify({
+            "upload_id": upload_id,
+            "session_id": session_id,
+            "chunk_size": 16 * 1024 * 1024,  # 16MB chunks
+            "max_parallel": 4
+        })
+        
+    except Exception as e:
+        print(f"❌ Streaming upload init error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@main_bp.route('/upload/<upload_id>', methods=['PUT'])
+@measure_latency("streaming_upload_chunk")
+def upload_chunk(upload_id):
+    """Handle streaming upload chunk with Content-Range"""
+    try:
+        state = load_state(upload_id)
+        if not state:
+            return jsonify({"error": "Invalid upload_id"}), 404
+
+        # Parse Content-Range header
+        content_range = request.headers.get("Content-Range")
+        if not content_range:
+            return jsonify({"error": "Content-Range header required"}), 411
+            
+        match = RANGE_RE.match(content_range)
+        if not match:
+            return jsonify({"error": "Invalid Content-Range format"}), 400
+
+        start, end, total = map(int, match.groups())
+        
+        # Validate total size consistency
+        if state["total"] and state["total"] != total:
+            return jsonify({"error": "Size mismatch"}), 409
+
+        # Stream chunk directly to disk at correct offset
+        mode = "r+b" if os.path.exists(state["temp_path"]) else "wb"
+        with open(state["temp_path"], mode) as f:
+            f.seek(start)
+            
+            # Stream in 1MB blocks to avoid memory usage
+            bytes_written = 0
+            target_bytes = end - start + 1
+            
+            while bytes_written < target_bytes:
+                chunk = request.stream.read(min(1024 * 1024, target_bytes - bytes_written))
+                if not chunk:
+                    break
+                f.write(chunk)
+                bytes_written += len(chunk)
+
+        # Update received ranges
+        state["received"] = merge_ranges(state["received"] + [[start, end]])
+        save_state(upload_id, state)
+        
+        progress = sum(r[1] - r[0] + 1 for r in state["received"]) / state["total"] * 100
+        
+        print(f"📊 Chunk received: {upload_id} [{start}-{end}] ({progress:.1f}%)")
+        
+        return jsonify({
+            "ok": True,
+            "received": state["received"],
+            "progress": progress
+        })
+        
+    except Exception as e:
+        print(f"❌ Chunk upload error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@main_bp.route('/upload/<upload_id>/status', methods=['GET'])
+def get_upload_status(upload_id):
+    """Get streaming upload status"""
+    try:
+        state = load_state(upload_id)
+        if not state:
+            return jsonify({"error": "Invalid upload_id"}), 404
+            
+        progress = 0
+        if state["total"] > 0:
+            received_bytes = sum(r[1] - r[0] + 1 for r in state["received"])
+            progress = received_bytes / state["total"] * 100
+            
+        return jsonify({
+            "upload_id": upload_id,
+            "total": state["total"],
+            "received": state["received"],
+            "progress": progress,
+            "filename": state["filename"]
+        })
+        
+    except Exception as e:
+        print(f"❌ Status check error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@main_bp.route('/upload/<upload_id>/complete', methods=['POST'])
+@measure_latency("streaming_upload_complete")
+def complete_streaming_upload(upload_id):
+    """Complete streaming upload and finalize file"""
+    try:
+        state = load_state(upload_id)
+        if not state:
+            return jsonify({"error": "Invalid upload_id"}), 404
+
+        # Verify upload completion
+        if state["total"] == 0:
+            size = os.path.getsize(state["temp_path"])
+            state["total"] = size
+            
+        received = merge_ranges(state["received"])
+        is_complete = (len(received) == 1 and 
+                      received[0][0] == 0 and 
+                      received[0][1] == state["total"] - 1)
+        
+        if not is_complete:
+            return jsonify({
+                "error": "Upload incomplete",
+                "received": received,
+                "total": state["total"],
+                "missing_ranges": []  # Could calculate missing ranges here
+            }), 409
+
+        # Atomic move to final location
+        os.makedirs(os.path.dirname(state["final_path"]), exist_ok=True)
+        os.replace(state["temp_path"], state["final_path"])
+        
+        # Store session data for analysis
+        session_data = {
+            'filepath': state["final_path"],
+            'filename': state["filename"],
+            'upload_time': datetime.now().isoformat(),
+            'session_id': state["session_id"],
+            'file_size': state["total"],
+            'upload_method': 'streaming'
+        }
+        
+        store_session_data(state["session_id"], session_data)
+        
+        # Cleanup state file
+        try:
+            os.remove(state_path(upload_id))
+        except:
+            pass
+            
+        print(f"✅ Streaming upload complete: {state['filename']} ({state['total']} bytes)")
+        
+        return jsonify({
+            "ok": True,
+            "path": state["final_path"],
+            "filename": state["filename"],
+            "size": state["total"],
+            "session_id": state["session_id"],
+            "message": "Upload completed successfully"
+        })
+        
+    except Exception as e:
+        print(f"❌ Upload completion error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @main_bp.route('/upload', methods=['POST'])
 @measure_latency("video_upload")

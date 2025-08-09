@@ -10,16 +10,10 @@ class Config:
     # Flask Configuration
     SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here')
     UPLOAD_FOLDER = 'static/uploads'
-    DEVELOPMENT = True  # For cleanup endpoints
     
     # File Upload Configuration - Optimized for 80GB GPU
     ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'webm', 'mkv'}
     MAX_CONTENT_LENGTH = 2 * 1024 * 1024 * 1024  # 2GB upload limit
-    
-    # Streaming Upload Configuration
-    STREAM_UPLOAD_ENABLED = True
-    STREAM_CHUNK_TIMEOUT = 3600  # 1 hour timeout for chunk uploads
-    STREAM_CLEANUP_AGE = 3600  # Clean up incomplete uploads after 1 hour
     
     # Redis Configuration
     REDIS_URL = "redis://default:nswO0Z95wT9aeXIIOZMMphnDhsPY3slG@redis-10404.c232.us-east-1-2.ec2.redns.redis-cloud.com:10404"
