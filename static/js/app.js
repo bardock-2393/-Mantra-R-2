@@ -191,6 +191,221 @@ class VideoDetective {
         this.currentFile = file;
         this.showFileInfo(file);
         this.showVideoPreview(file);
+        
+        // Initialize WebSocket upload capabilities
+        this.initializeWebSocketUpload();
+    }
+    
+    // === WEBSOCKET UPLOAD METHODS ===
+    
+    initializeWebSocketUpload() {
+        """Initialize WebSocket upload event listeners"""
+        if (!this.socket) {
+            console.error('WebSocket not connected');
+            return;
+        }
+        
+        // WebSocket upload event listeners
+        this.socket.on('upload_ready', (data) => {
+            console.log('📤 Upload ready:', data);
+            this.currentUploadId = data.upload_id;
+            this.showMessage(data.message, 'success');
+        });
+        
+        this.socket.on('upload_progress', (data) => {
+            this.updateUploadProgress(data);
+        });
+        
+        this.socket.on('upload_completed', (data) => {
+            console.log('✅ Upload completed:', data);
+            this.hideUploadProgress();
+            this.showMessage(data.message, 'success');
+            this.currentFilePath = data.file_path;
+            this.enableAnalysisButtons();
+        });
+        
+        this.socket.on('upload_error', (data) => {
+            console.error('❌ Upload error:', data);
+            this.hideUploadProgress();
+            this.showError(data.error);
+        });
+        
+        this.socket.on('upload_cancelled', (data) => {
+            console.log('🚫 Upload cancelled:', data);
+            this.hideUploadProgress();
+            this.showMessage(data.message, 'warning');
+        });
+        
+        this.socket.on('chunk_received', (data) => {
+            // Real-time chunk confirmation (optional)
+            console.log(`📦 Chunk received: ${data.progress.toFixed(1)}%`);
+        });
+    }
+    
+    async startWebSocketUpload() {
+        """Start WebSocket-based file upload"""
+        if (!this.currentFile) {
+            this.showError('No file selected');
+            return;
+        }
+        
+        if (!this.socket || !this.socket.connected) {
+            this.showError('WebSocket not connected. Please refresh the page.');
+            return;
+        }
+        
+        try {
+            // Show upload progress UI
+            this.showUploadProgress();
+            
+            // Initialize upload session
+            this.socket.emit('start_upload', {
+                session_id: this.sessionId,
+                filename: this.currentFile.name,
+                file_size: this.currentFile.size,
+                file_type: this.currentFile.type
+            });
+            
+            // Wait for upload_ready event before starting chunk upload
+            this.socket.once('upload_ready', (data) => {
+                this.currentUploadId = data.upload_id;
+                this.uploadFileInChunks();
+            });
+            
+        } catch (error) {
+            console.error('Upload start error:', error);
+            this.showError(`Upload failed: ${error.message}`);
+            this.hideUploadProgress();
+        }
+    }
+    
+    async uploadFileInChunks() {
+        """Upload file in chunks via WebSocket"""
+        const CHUNK_SIZE = 1024 * 1024; // 1MB chunks for optimal performance
+        const file = this.currentFile;
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        
+        console.log(`🚀 Starting chunked upload: ${totalChunks} chunks of ${CHUNK_SIZE / 1024}KB each`);
+        
+        for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+            const start = chunkIndex * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, file.size);
+            const chunk = file.slice(start, end);
+            const isLast = chunkIndex === totalChunks - 1;
+            
+            try {
+                // Convert chunk to base64
+                const base64Chunk = await this.fileToBase64(chunk);
+                
+                // Send chunk via WebSocket
+                this.socket.emit('upload_chunk', {
+                    upload_id: this.currentUploadId,
+                    chunk_data: base64Chunk,
+                    chunk_index: chunkIndex,
+                    is_final: isLast
+                });
+                
+                // Small delay to prevent overwhelming the server
+                if (chunkIndex % 10 === 0) {
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                }
+                
+            } catch (error) {
+                console.error(`Chunk ${chunkIndex} upload failed:`, error);
+                this.cancelWebSocketUpload();
+                this.showError(`Upload failed at chunk ${chunkIndex + 1}/${totalChunks}`);
+                return;
+            }
+        }
+    }
+    
+    cancelWebSocketUpload() {
+        """Cancel active WebSocket upload"""
+        if (this.currentUploadId && this.socket) {
+            this.socket.emit('cancel_upload', {
+                upload_id: this.currentUploadId
+            });
+            this.currentUploadId = null;
+        }
+        this.hideUploadProgress();
+    }
+    
+    fileToBase64(file) {
+        """Convert file chunk to base64"""
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                // Remove data URL prefix (data:;base64,)
+                const base64 = reader.result.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+    
+    showUploadProgress() {
+        """Show upload progress UI"""
+        const uploadArea = document.getElementById('uploadArea');
+        
+        // Create progress UI if it doesn't exist
+        if (!document.getElementById('uploadProgress')) {
+            const progressHTML = `
+                <div id="uploadProgress" class="upload-progress">
+                    <div class="progress-header">
+                        <h3>📤 Uploading Video...</h3>
+                        <button id="cancelUploadBtn" class="cancel-btn">❌ Cancel</button>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div id="progressBar" class="progress-bar">
+                            <div id="progressFill" class="progress-fill"></div>
+                        </div>
+                        <div id="progressText" class="progress-text">0% (0 MB/s)</div>
+                    </div>
+                    <div id="uploadDetails" class="upload-details">
+                        Preparing upload...
+                    </div>
+                </div>
+            `;
+            uploadArea.insertAdjacentHTML('afterend', progressHTML);
+            
+            // Add cancel button handler
+            document.getElementById('cancelUploadBtn').addEventListener('click', () => {
+                this.cancelWebSocketUpload();
+            });
+        }
+        
+        document.getElementById('uploadProgress').style.display = 'block';
+    }
+    
+    updateUploadProgress(data) {
+        """Update upload progress display"""
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const uploadDetails = document.getElementById('uploadDetails');
+        
+        if (progressFill && progressText && uploadDetails) {
+            progressFill.style.width = `${data.progress}%`;
+            progressText.textContent = `${data.progress.toFixed(1)}% (${data.upload_speed.toFixed(1)} MB/s)`;
+            uploadDetails.textContent = `${this.formatFileSize(data.bytes_received)} / ${this.formatFileSize(data.total_size)} • ${data.chunks_received} chunks received`;
+        }
+    }
+    
+    hideUploadProgress() {
+        """Hide upload progress UI"""
+        const uploadProgress = document.getElementById('uploadProgress');
+        if (uploadProgress) {
+            uploadProgress.style.display = 'none';
+        }
+    }
+    
+    enableAnalysisButtons() {
+        """Enable analysis buttons after successful upload"""
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const uploadBtn = document.getElementById('uploadBtn');
+        
+        if (analyzeBtn) analyzeBtn.disabled = false;
+        if (uploadBtn) uploadBtn.textContent = '✅ Ready to Analyze';
     }
 
     isValidVideoFile(file) {
@@ -241,18 +456,39 @@ class VideoDetective {
         // Check if this is a demo video preview
         const previewVideo = document.getElementById('previewVideo');
         if (previewVideo && previewVideo.src && previewVideo.src.includes('/demo-video')) {
-            // This is a demo video, upload it
+            // This is a demo video, upload it via traditional method (demo files are small)
             await this.uploadDemoVideo();
         } else if (this.currentFile) {
-            // This is a regular uploaded file
-            await this.uploadFile(this.currentFile);
+            // This is a regular uploaded file - use WebSocket upload for better performance
+            await this.uploadFileWebSocket(this.currentFile);
         } else {
             // If no file is selected but we're in demo mode, upload demo video
             await this.uploadDemoVideo();
         }
     }
 
+    async uploadFileWebSocket(file) {
+        """Upload file using WebSocket for real-time progress and large file support"""
+        try {
+            // Start WebSocket upload process
+            await this.startWebSocketUpload();
+            
+            // Listen for upload completion to trigger analysis
+            this.socket.once('upload_completed', (data) => {
+                console.log('✅ WebSocket upload completed, starting analysis...');
+                this.showFileInfo(file, data.filename, data.file_size);
+                this.showCleanupButton();
+                this.analyzeVideo();
+            });
+            
+        } catch (error) {
+            console.error('WebSocket upload failed:', error);
+            this.showError('WebSocket upload failed: ' + error.message);
+        }
+    }
+
     async uploadFile(file) {
+        """Legacy HTTP upload method (fallback for small files/demos)"""
         const formData = new FormData();
         formData.append('video', file);
 

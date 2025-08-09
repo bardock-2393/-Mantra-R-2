@@ -80,6 +80,132 @@ def create_app():
     def handle_ping():
         emit('pong', {'timestamp': time.time()})
     
+    # === WEBSOCKET UPLOAD EVENT HANDLERS ===
+    
+    @socketio.on('start_upload')
+    def handle_start_upload(data):
+        """Handle WebSocket upload initialization"""
+        from services.websocket_service import websocket_service
+        
+        session_id = data.get('session_id')
+        filename = data.get('filename')
+        file_size = data.get('file_size')
+        file_type = data.get('file_type', '')
+        
+        if not all([session_id, filename, file_size]):
+            emit('upload_error', {
+                'error': 'Missing required parameters: session_id, filename, file_size',
+                'timestamp': time.time()
+            })
+            return
+        
+        result = websocket_service.start_upload(session_id, filename, file_size, file_type)
+        
+        if result['success']:
+            emit('upload_ready', {
+                'upload_id': result['upload_id'],
+                'message': result['message'],
+                'timestamp': time.time()
+            })
+        else:
+            emit('upload_error', {
+                'error': result['error'],
+                'timestamp': time.time()
+            })
+    
+    @socketio.on('upload_chunk')
+    def handle_upload_chunk(data):
+        """Handle WebSocket file chunk upload"""
+        from services.websocket_service import websocket_service
+        
+        upload_id = data.get('upload_id')
+        chunk_data = data.get('chunk_data')  # Base64 encoded
+        chunk_index = data.get('chunk_index', 0)
+        is_final = data.get('is_final', False)
+        
+        if not all([upload_id, chunk_data is not None]):
+            emit('upload_error', {
+                'error': 'Missing required parameters: upload_id, chunk_data',
+                'timestamp': time.time()
+            })
+            return
+        
+        result = websocket_service.upload_chunk(upload_id, chunk_data, chunk_index, is_final)
+        
+        if result['success']:
+            if result.get('upload_complete'):
+                # Upload finished, send file path for analysis
+                emit('upload_success', {
+                    'upload_id': upload_id,
+                    'file_path': result['file_path'],
+                    'message': 'Upload completed successfully',
+                    'timestamp': time.time()
+                })
+            else:
+                emit('chunk_received', {
+                    'upload_id': upload_id,
+                    'progress': result['progress'],
+                    'timestamp': time.time()
+                })
+        else:
+            emit('upload_error', {
+                'upload_id': upload_id,
+                'error': result['error'],
+                'timestamp': time.time()
+            })
+    
+    @socketio.on('cancel_upload')
+    def handle_cancel_upload(data):
+        """Handle WebSocket upload cancellation"""
+        from services.websocket_service import websocket_service
+        
+        upload_id = data.get('upload_id')
+        if not upload_id:
+            emit('upload_error', {
+                'error': 'Missing upload_id parameter',
+                'timestamp': time.time()
+            })
+            return
+        
+        result = websocket_service.cancel_upload(upload_id)
+        
+        if result['success']:
+            emit('upload_cancelled', {
+                'upload_id': upload_id,
+                'message': result['message'],
+                'timestamp': time.time()
+            })
+        else:
+            emit('upload_error', {
+                'upload_id': upload_id,
+                'error': result['error'],
+                'timestamp': time.time()
+            })
+    
+    @socketio.on('get_upload_status')
+    def handle_get_upload_status(data):
+        """Handle WebSocket upload status request"""
+        from services.websocket_service import websocket_service
+        
+        upload_id = data.get('upload_id')
+        if not upload_id:
+            emit('upload_error', {
+                'error': 'Missing upload_id parameter',
+                'timestamp': time.time()
+            })
+            return
+        
+        result = websocket_service.get_upload_status(upload_id)
+        
+        if result['success']:
+            emit('upload_status', result)
+        else:
+            emit('upload_error', {
+                'upload_id': upload_id,
+                'error': result['error'],
+                'timestamp': time.time()
+            })
+    
     return app, socketio
 
 def start_cleanup_thread():

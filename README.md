@@ -602,7 +602,7 @@ echo $GOOGLE_API_KEY
 ```bash
 # Error: File too large
 # Check file size limit in config.py
-# Default: 100MB
+    # Default: 2GB (80GB GPU optimized)
 
 # Error: Unsupported format
 # Supported: MP4, AVI, MOV, WMV, FLV
