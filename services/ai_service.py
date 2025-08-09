@@ -58,6 +58,9 @@ def initialize_model():
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
             torch.set_float32_matmul_precision('high')
+            # Maximum A100 speed optimizations
+            torch.backends.cudnn.benchmark = True
+            torch.backends.cudnn.deterministic = False
             
             # Use low_cpu_mem_usage to reduce memory pressure
             model = Gemma3ForConditionalGeneration.from_pretrained(
@@ -122,7 +125,7 @@ async def analyze_video_with_gemini(video_path, analysis_type, user_focus):
         
         # Extract frames from video (reduced for space efficiency)
         print('Extracting frames from video...')
-        frames, timestamps, duration = extract_video_frames(video_path, num_frames=6)
+        frames, timestamps, duration = extract_video_frames(video_path, num_frames=3)
         
         if not frames:
             raise ValueError("No frames could be extracted from the video")
@@ -184,7 +187,7 @@ You are analyzing a video with duration {duration:.2f} seconds. The frames provi
         ]
         
         # Process frames efficiently (reduced for disk space)
-        for i, frame in enumerate(frames[1:3], 1):  # Use only 3 frames to save space
+        for i, frame in enumerate(frames[1:2], 1):  # Use only 1 additional frame for max speed
             messages[-1]["content"].append({"type": "image", "image": frame})
             messages[-1]["content"].append({"type": "text", "text": f"Frame at {timestamps[i]:.2f}s:"})
         

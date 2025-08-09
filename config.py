@@ -25,11 +25,11 @@ class Config:
     SESSION_EXPIRY = 3600  # 1 hour in seconds
     UPLOAD_CLEANUP_TIME = 2 * 3600  # 2 hours in seconds
     
-    # Analysis Configuration - A100 Optimized
-    MAX_OUTPUT_TOKENS = 65536  # Increased for A100
-    CHAT_MAX_TOKENS = 16384    # Increased for better responses
-    TEMPERATURE = 0.1          # Lower for more consistent results
-    CHAT_TEMPERATURE = 0.2     # Lower for focused chat
+    # Analysis Configuration - A100 Optimized for SPEED
+    MAX_OUTPUT_TOKENS = 4096   # Reduced for speed
+    CHAT_MAX_TOKENS = 2048     # Reduced for speed
+    TEMPERATURE = 0.0          # Greedy decoding (fastest)
+    CHAT_TEMPERATURE = 0.0     # Greedy decoding (fastest)
     TOP_P = 0.95              # Higher for A100
     TOP_K = 50                # Optimized for 27B model
     
