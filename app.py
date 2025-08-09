@@ -29,7 +29,7 @@ def create_app():
     socketio = SocketIO(
         app,
         cors_allowed_origins="*",
-        async_mode='eventlet',  # High performance async mode for A100 speed
+        async_mode='threading',  # Compatible async mode for Python 3.13
         logger=True,
         engineio_logger=False,
         ping_timeout=60,

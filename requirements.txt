@@ -44,5 +44,4 @@ websockets==15.0.1
 # Real-time WebSocket Support for Lightning Fast Communication
 flask-socketio==5.3.7
 python-socketio==5.11.4
-python-engineio==4.10.1
-eventlet==0.36.1 
+python-engineio==4.10.1 
