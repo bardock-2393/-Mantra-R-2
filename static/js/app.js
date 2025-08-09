@@ -257,8 +257,8 @@ class VideoDetective {
          * High-performance streaming upload for large files (2GB+)
          * Uses 16MB chunks with 4 parallel uploads for maximum speed
          */
-        const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB chunks
-        const MAX_PARALLEL = 4; // Parallel uploads
+        const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks (faster for your network)
+        const MAX_PARALLEL = 8; // Even more parallel uploads
         
         try {
             console.log('🚀 Starting streaming upload for large file...', {
@@ -309,7 +309,7 @@ class VideoDetective {
             
             // Update progress details
             if (detailsElement) {
-                detailsElement.textContent = 'Starting 16MB chunked upload with 4 parallel streams...';
+                detailsElement.textContent = 'Starting 4MB chunked upload with 8 parallel streams...';
             }
             
             // Step 2: Upload chunks in parallel
@@ -332,13 +332,27 @@ class VideoDetective {
             await Promise.all(workers);
             
             // Step 3: Complete upload
+            console.log('🏁 Attempting to complete upload...');
+            
             const completeResponse = await fetch(`/upload/${upload_id}/complete`, {
                 method: 'POST'
             });
             
             if (!completeResponse.ok) {
-                const error = await completeResponse.json();
-                throw new Error(error.error || 'Upload completion failed');
+                const errorText = await completeResponse.text();
+                console.error('❌ Completion error:', errorText);
+                
+                try {
+                    const error = JSON.parse(errorText);
+                    if (error.error === 'incomplete') {
+                        // Show which parts are missing and let user decide
+                        console.log('📊 Upload incomplete. Missing ranges:', error.missing_ranges);
+                        throw new Error(`Upload incomplete. ${error.received?.length || 0} chunks received out of ${totalChunks} expected.`);
+                    }
+                    throw new Error(error.error || 'Upload completion failed');
+                } catch (e) {
+                    throw new Error(`Upload completion failed: ${completeResponse.status} - ${errorText}`);
+                }
             }
             
             const result = await completeResponse.json();
@@ -364,7 +378,7 @@ class VideoDetective {
     
     async streamingWorker(file, uploadId, chunkSize, totalChunks, getNextChunk, onProgress) {
         /**
-         * Worker function for parallel chunk uploads
+         * Worker function for parallel chunk uploads with retry logic
          */
         while (true) {
             const chunkIndex = getNextChunk();
@@ -374,21 +388,51 @@ class VideoDetective {
             const end = Math.min(start + chunkSize, file.size) - 1;
             const blob = file.slice(start, end + 1);
             
-            const response = await fetch(`/upload/${uploadId}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Range': `bytes ${start}-${end}/${file.size}`
-                },
-                body: blob
-            });
+            // Retry logic for failed chunks
+            let retries = 3;
+            let success = false;
             
-            if (!response.ok) {
-                const error = await response.text();
-                throw new Error(`Chunk ${chunkIndex} failed: ${error}`);
+            while (retries > 0 && !success) {
+                try {
+                    const response = await fetch(`/upload/${uploadId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Range': `bytes ${start}-${end}/${file.size}`,
+                            'Connection': 'keep-alive'
+                        },
+                        body: blob,
+                        keepalive: true
+                    });
+                    
+                    if (response.ok) {
+                        success = true;
+                        onProgress(blob.size);
+                        console.log(`📊 Chunk ${chunkIndex + 1}/${totalChunks} uploaded (${start}-${end})`);
+                    } else {
+                        // Handle error response
+                        let errorMsg = `HTTP ${response.status}`;
+                        try {
+                            const errorData = await response.json();
+                            errorMsg = errorData.error || errorMsg;
+                        } catch (e) {
+                            // If JSON parsing fails, use status text
+                            errorMsg = response.statusText || errorMsg;
+                        }
+                        throw new Error(errorMsg);
+                    }
+                } catch (error) {
+                    retries--;
+                    if (retries > 0) {
+                        console.log(`⚠️ Chunk ${chunkIndex + 1} failed, retrying... (${retries} left) - ${error.message}`);
+                        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s before retry
+                    } else {
+                        console.error(`❌ Chunk ${chunkIndex + 1} failed permanently: ${error.message}`);
+                        // For now, continue with other chunks instead of failing completely
+                        // This makes the upload more resilient to occasional network hiccups
+                        break; // Exit this chunk's retry loop, but continue with other chunks
+                    }
+                }
             }
-            
-            onProgress(blob.size);
-            console.log(`📊 Chunk ${chunkIndex + 1}/${totalChunks} uploaded (${start}-${end})`);
         }
     }
     

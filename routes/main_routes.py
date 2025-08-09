@@ -176,21 +176,14 @@ def upload_chunk(upload_id):
         if state["total"] and state["total"] != total:
             return jsonify({"error": "Size mismatch"}), 409
 
-        # Stream chunk directly to disk at correct offset
-        mode = "r+b" if os.path.exists(state["temp_path"]) else "wb"
-        with open(state["temp_path"], mode) as f:
+        # Stream chunk directly to disk at correct offset (OPTIMIZED)
+        with open(state["temp_path"], "r+b") as f:
             f.seek(start)
             
-            # Stream in 1MB blocks to avoid memory usage
-            bytes_written = 0
-            target_bytes = end - start + 1
-            
-            while bytes_written < target_bytes:
-                chunk = request.stream.read(min(1024 * 1024, target_bytes - bytes_written))
-                if not chunk:
-                    break
-                f.write(chunk)
-                bytes_written += len(chunk)
+            # Read entire chunk at once for better performance
+            chunk_data = request.get_data()
+            f.write(chunk_data)
+            f.flush()  # Ensure data is written immediately
 
         # Update received ranges
         state["received"] = merge_ranges(state["received"] + [[start, end]])
