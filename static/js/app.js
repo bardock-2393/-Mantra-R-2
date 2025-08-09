@@ -216,7 +216,7 @@ class VideoDetective {
         this.socket.on('upload_ready', (data) => {
             console.log('📤 Upload ready:', data);
             this.currentUploadId = data.upload_id;
-            this.showMessage(data.message, 'success');
+            this.showNotification(data.message, 'success');
         });
         
         this.socket.on('upload_progress', (data) => {
@@ -226,7 +226,7 @@ class VideoDetective {
         this.socket.on('upload_completed', (data) => {
             console.log('✅ Upload completed:', data);
             this.hideUploadProgress();
-            this.showMessage(data.message, 'success');
+            this.showSuccess(data.message);
             this.currentFilePath = data.file_path;
             this.enableAnalysisButtons();
         });
@@ -243,7 +243,7 @@ class VideoDetective {
         this.socket.on('upload_cancelled', (data) => {
             console.log('🚫 Upload cancelled:', data);
             this.hideUploadProgress();
-            this.showMessage(data.message, 'warning');
+            this.showNotification(data.message, 'warning');
         });
         
         this.socket.on('chunk_received', (data) => {
