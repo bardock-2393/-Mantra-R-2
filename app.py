@@ -34,7 +34,7 @@ def create_app():
         engineio_logger=False,
         ping_timeout=120,  # Increased for large file uploads
         ping_interval=30,  # More stable interval
-        max_http_buffer_size=2 * 1024 * 1024,  # 2MB buffer for chunks
+        max_http_buffer_size=25 * 1024 * 1024,  # 25MB buffer for 20MB chunks + overhead
         allow_upgrades=True,
         transports=['websocket', 'polling']  # Fallback transport
     )
@@ -59,6 +59,25 @@ def create_app():
     @socketio.on('disconnect')
     def handle_disconnect():
         print('🔌 Client disconnected from WebSocket')
+        # Clean up any ongoing uploads for this client
+        try:
+            from services.websocket_service import websocket_service
+            # Note: In a production system, we'd track uploads by client SID
+            # For now, we rely on the upload session cleanup
+        except Exception as e:
+            print(f"⚠️ Error during disconnect cleanup: {e}")
+    
+    @socketio.on_error_default
+    def default_error_handler(e):
+        """Handle all uncaught WebSocket errors"""
+        print(f"🚨 WebSocket error: {e}")
+        try:
+            emit('error', {
+                'message': 'Connection error occurred',
+                'timestamp': time.time()
+            })
+        except:
+            pass  # Client may have disconnected
     
     @socketio.on('join_session')
     def handle_join_session(data):
@@ -87,75 +106,96 @@ def create_app():
     
     @socketio.on('start_upload')
     def handle_start_upload(data):
-        """Handle WebSocket upload initialization"""
-        from services.websocket_service import websocket_service
-        
-        session_id = data.get('session_id')
-        filename = data.get('filename')
-        file_size = data.get('file_size')
-        file_type = data.get('file_type', '')
-        
-        if not all([session_id, filename, file_size]):
-            emit('upload_error', {
-                'error': 'Missing required parameters: session_id, filename, file_size',
-                'timestamp': time.time()
-            })
-            return
-        
-        result = websocket_service.start_upload(session_id, filename, file_size, file_type)
-        
-        if result['success']:
-            emit('upload_ready', {
-                'upload_id': result['upload_id'],
-                'message': result['message'],
-                'timestamp': time.time()
-            })
-        else:
-            emit('upload_error', {
-                'error': result['error'],
-                'timestamp': time.time()
-            })
-    
-    @socketio.on('upload_chunk')
-    def handle_upload_chunk(data):
-        """Handle WebSocket file chunk upload"""
-        from services.websocket_service import websocket_service
-        
-        upload_id = data.get('upload_id')
-        chunk_data = data.get('chunk_data')  # Base64 encoded
-        chunk_index = data.get('chunk_index', 0)
-        is_final = data.get('is_final', False)
-        
-        if not all([upload_id, chunk_data is not None]):
-            emit('upload_error', {
-                'error': 'Missing required parameters: upload_id, chunk_data',
-                'timestamp': time.time()
-            })
-            return
-        
-        result = websocket_service.upload_chunk(upload_id, chunk_data, chunk_index, is_final)
-        
-        if result['success']:
-            if result.get('upload_complete'):
-                # Upload finished, send file path for analysis
-                emit('upload_success', {
-                    'upload_id': upload_id,
-                    'file_path': result['file_path'],
-                    'message': 'Upload completed successfully',
+        """Handle WebSocket upload initialization with error handling"""
+        try:
+            from services.websocket_service import websocket_service
+            
+            session_id = data.get('session_id')
+            filename = data.get('filename')
+            file_size = data.get('file_size')
+            file_type = data.get('file_type', '')
+            
+            if not all([session_id, filename, file_size]):
+                emit('upload_error', {
+                    'error': 'Missing required parameters: session_id, filename, file_size',
+                    'timestamp': time.time()
+                })
+                return
+            
+            result = websocket_service.start_upload(session_id, filename, file_size, file_type)
+            
+            if result['success']:
+                emit('upload_ready', {
+                    'upload_id': result['upload_id'],
+                    'message': result['message'],
                     'timestamp': time.time()
                 })
             else:
-                emit('chunk_received', {
-                    'upload_id': upload_id,
-                    'progress': result['progress'],
+                emit('upload_error', {
+                    'error': result['error'],
                     'timestamp': time.time()
                 })
-        else:
-            emit('upload_error', {
-                'upload_id': upload_id,
-                'error': result['error'],
-                'timestamp': time.time()
-            })
+        except Exception as e:
+            print(f"❌ Error in start_upload handler: {e}")
+            try:
+                emit('upload_error', {
+                    'error': f'Server error: {str(e)}',
+                    'timestamp': time.time()
+                })
+            except:
+                pass  # Client may have disconnected
+    
+    @socketio.on('upload_chunk')
+    def handle_upload_chunk(data):
+        """Handle WebSocket file chunk upload with error handling"""
+        try:
+            from services.websocket_service import websocket_service
+            
+            upload_id = data.get('upload_id')
+            chunk_data = data.get('chunk_data')  # Base64 encoded
+            chunk_index = data.get('chunk_index', 0)
+            is_final = data.get('is_final', False)
+            
+            if not all([upload_id, chunk_data is not None]):
+                emit('upload_error', {
+                    'error': 'Missing required parameters: upload_id, chunk_data',
+                    'timestamp': time.time()
+                })
+                return
+            
+            result = websocket_service.upload_chunk(upload_id, chunk_data, chunk_index, is_final)
+            
+            if result['success']:
+                if result.get('upload_complete'):
+                    # Upload finished, send file path for analysis
+                    emit('upload_success', {
+                        'upload_id': upload_id,
+                        'file_path': result['file_path'],
+                        'message': 'Upload completed successfully',
+                        'timestamp': time.time()
+                    })
+                else:
+                    emit('chunk_received', {
+                        'upload_id': upload_id,
+                        'progress': result['progress'],
+                        'timestamp': time.time()
+                    })
+            else:
+                emit('upload_error', {
+                    'upload_id': upload_id,
+                    'error': result['error'],
+                    'timestamp': time.time()
+                })
+        except Exception as e:
+            print(f"❌ Error in upload_chunk handler: {e}")
+            try:
+                emit('upload_error', {
+                    'upload_id': upload_id if 'upload_id' in locals() else 'unknown',
+                    'error': f'Server error: {str(e)}',
+                    'timestamp': time.time()
+                })
+            except:
+                pass  # Client may have disconnected
     
     @socketio.on('cancel_upload')
     def handle_cancel_upload(data):

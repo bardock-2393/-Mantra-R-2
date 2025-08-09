@@ -191,19 +191,22 @@ class WebSocketService:
             upload_speed = upload_session['bytes_received'] / (time.time() - upload_session['started_at']) / (1024**2)  # MB/s
             
             # Emit progress update (with error handling for disconnected clients)
-            try:
-                self.socketio.emit('upload_progress', {
-                    'upload_id': upload_id,
-                    'progress': progress,
-                    'bytes_received': upload_session['bytes_received'],
-                    'total_size': upload_session['file_size'],
-                    'upload_speed': upload_speed,
-                    'chunks_received': upload_session['chunks_received'],
-                    'message': f'📤 Uploading: {progress:.1f}% ({upload_speed:.1f}MB/s)'
-                }, room=session_id)
-            except Exception as e:
-                print(f"⚠️ WebSocket emit error (progress): {e}")
-                # Continue processing even if client disconnected
+            if session_id in self.active_sessions:
+                try:
+                    self.socketio.emit('upload_progress', {
+                        'upload_id': upload_id,
+                        'progress': progress,
+                        'bytes_received': upload_session['bytes_received'],
+                        'total_size': upload_session['file_size'],
+                        'upload_speed': upload_speed,
+                        'chunks_received': upload_session['chunks_received'],
+                        'message': f'📤 Uploading: {progress:.1f}% ({upload_speed:.1f}MB/s)'
+                    }, room=session_id)
+                except Exception as e:
+                    print(f"⚠️ WebSocket emit error (progress): {e}")
+                    # Continue processing even if client disconnected
+            else:
+                print(f"⚠️ Session {session_id} no longer active, skipping progress update")
             
             # Handle final chunk
             if is_final:
@@ -223,19 +226,22 @@ class WebSocketService:
                 avg_speed = upload_session['file_size'] / upload_time / (1024**2)
                 
                 # Emit upload completed event (with error handling)
-                try:
-                    self.socketio.emit('upload_completed', {
-                        'upload_id': upload_id,
-                        'filename': upload_session['filename'],
-                        'file_path': upload_session['file_path'],
-                        'file_size': upload_session['file_size'],
-                        'upload_time': upload_time,
-                        'average_speed': avg_speed,
-                        'message': f'✅ Upload complete: {upload_session["filename"]} ({avg_speed:.1f}MB/s avg)'
-                    }, room=session_id)
-                except Exception as e:
-                    print(f"⚠️ WebSocket emit error (completion): {e}")
-                    # Upload still completed successfully even if client disconnected
+                if session_id in self.active_sessions:
+                    try:
+                        self.socketio.emit('upload_completed', {
+                            'upload_id': upload_id,
+                            'filename': upload_session['filename'],
+                            'file_path': upload_session['file_path'],
+                            'file_size': upload_session['file_size'],
+                            'upload_time': upload_time,
+                            'average_speed': avg_speed,
+                            'message': f'✅ Upload complete: {upload_session["filename"]} ({avg_speed:.1f}MB/s avg)'
+                        }, room=session_id)
+                    except Exception as e:
+                        print(f"⚠️ WebSocket emit error (completion): {e}")
+                        # Upload still completed successfully even if client disconnected
+                else:
+                    print(f"✅ Upload completed for disconnected session {session_id}: {upload_session['filename']}")
                 
                 return {
                     'success': True,

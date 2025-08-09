@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Percentage Test</title>
+    <link rel="stylesheet" href="static/css/style.css">
+    <style>
+        body {
+            padding: 2rem;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .demo-container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .test-button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 0.5rem;
+            font-weight: 500;
+        }
+        .test-button:hover {
+            background: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <h1>🚀 Upload Percentage Display Test</h1>
+        <p>This demo shows how the upload percentage will be displayed during file uploads.</p>
+        
+        <div class="upload-area" id="uploadArea">
+            <h2>Upload Area</h2>
+            <p>The progress bar will appear below when upload starts.</p>
+        </div>
+
+        <div class="controls">
+            <button class="test-button" onclick="startDemo()">Start Upload Demo</button>
+            <button class="test-button" onclick="resetDemo()">Reset</button>
+            <button class="test-button" onclick="showComplete()">Show 100%</button>
+        </div>
+
+        <div id="uploadProgress" class="upload-progress" style="display: none;">
+            <div class="progress-header">
+                <h3>📤 Uploading Video...</h3>
+                <div id="percentageDisplay" class="percentage-display">0%</div>
+                <button id="cancelUploadBtn" class="cancel-btn">❌ Cancel</button>
+            </div>
+            <div class="progress-bar-container">
+                <div id="progressBar" class="progress-bar">
+                    <div id="progressFill" class="progress-fill">
+                        <div id="progressPercentage" class="progress-percentage">0%</div>
+                    </div>
+                </div>
+                <div id="progressText" class="progress-text">0 MB/s</div>
+            </div>
+            <div id="uploadDetails" class="upload-details">
+                Preparing upload...
+            </div>
+        </div>
+
+        <div class="info">
+            <h3>📊 Features Demonstrated:</h3>
+            <ul>
+                <li>✅ <strong>Large percentage display</strong> in header (blue box)</li>
+                <li>✅ <strong>Percentage inside progress bar</strong> (when >10%)</li>
+                <li>✅ <strong>Upload speed display</strong> (MB/s)</li>
+                <li>✅ <strong>File size progress</strong> (bytes received/total)</li>
+                <li>✅ <strong>Animated progress bar</strong> with shimmer effect</li>
+                <li>✅ <strong>Real-time console logging</strong> (check browser console)</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        let demoInterval;
+        let currentProgress = 0;
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function updateUploadProgress(data) {
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            const uploadDetails = document.getElementById('uploadDetails');
+            const percentageDisplay = document.getElementById('percentageDisplay');
+            const progressPercentage = document.getElementById('progressPercentage');
+            
+            const percentage = data.progress.toFixed(1);
+            
+            if (progressFill) {
+                progressFill.style.width = `${percentage}%`;
+            }
+            
+            if (percentageDisplay) {
+                percentageDisplay.textContent = `${percentage}%`;
+            }
+            
+            if (progressPercentage) {
+                progressPercentage.textContent = `${percentage}%`;
+                progressPercentage.style.display = data.progress > 10 ? 'block' : 'none';
+            }
+            
+            if (progressText) {
+                progressText.textContent = `${data.upload_speed.toFixed(1)} MB/s`;
+            }
+            
+            if (uploadDetails) {
+                uploadDetails.textContent = `${formatFileSize(data.bytes_received)} / ${formatFileSize(data.total_size)} • ${data.chunks_received} chunks received`;
+            }
+            
+            console.log(`📊 Upload Progress: ${percentage}% (${data.upload_speed.toFixed(1)} MB/s)`);
+        }
+
+        function startDemo() {
+            document.getElementById('uploadProgress').style.display = 'block';
+            currentProgress = 0;
+            
+            const totalSize = 500 * 1024 * 1024; // 500MB demo file
+            
+            demoInterval = setInterval(() => {
+                currentProgress += Math.random() * 5 + 2; // Random increment 2-7%
+                if (currentProgress > 100) currentProgress = 100;
+                
+                const bytesReceived = (currentProgress / 100) * totalSize;
+                const uploadSpeed = 15 + Math.random() * 25; // Random speed 15-40 MB/s
+                const chunks = Math.floor(currentProgress * 2.5); // Simulate chunks
+                
+                updateUploadProgress({
+                    progress: currentProgress,
+                    bytes_received: bytesReceived,
+                    total_size: totalSize,
+                    upload_speed: uploadSpeed,
+                    chunks_received: chunks
+                });
+                
+                if (currentProgress >= 100) {
+                    clearInterval(demoInterval);
+                    setTimeout(() => {
+                        document.getElementById('uploadProgress').style.display = 'none';
+                        alert('🎉 Upload Demo Complete! Check the console for logs.');
+                    }, 1000);
+                }
+            }, 200); // Update every 200ms for smooth animation
+        }
+
+        function resetDemo() {
+            clearInterval(demoInterval);
+            document.getElementById('uploadProgress').style.display = 'none';
+            currentProgress = 0;
+        }
+
+        function showComplete() {
+            document.getElementById('uploadProgress').style.display = 'block';
+            updateUploadProgress({
+                progress: 100,
+                bytes_received: 500 * 1024 * 1024,
+                total_size: 500 * 1024 * 1024,
+                upload_speed: 32.5,
+                chunks_received: 250
+            });
+        }
+    </script>
+</body>
+</html>

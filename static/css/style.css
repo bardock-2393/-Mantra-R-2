@@ -286,6 +286,24 @@ body {
     margin-bottom: 1rem;
 }
 
+.percentage-display {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #3b82f6;
+    background: rgba(59, 130, 246, 0.1);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 2px solid rgba(59, 130, 246, 0.2);
+    min-width: 80px;
+    text-align: center;
+    animation: pulsePercentage 2s infinite;
+}
+
+@keyframes pulsePercentage {
+    0%, 100% { background: rgba(59, 130, 246, 0.1); }
+    50% { background: rgba(59, 130, 246, 0.2); }
+}
+
 .progress-header h3 {
     color: #1e293b;
     font-size: 1.1rem;
@@ -331,6 +349,19 @@ body {
     width: 0%;
     position: relative;
     overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.progress-percentage {
+    color: white;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    white-space: nowrap;
+    position: absolute;
+    z-index: 10;
 }
 
 .progress-fill::before {

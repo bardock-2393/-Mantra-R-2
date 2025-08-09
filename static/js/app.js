@@ -30,7 +30,13 @@ class VideoDetective {
         }
         
         console.log('🔗 Connecting to WebSocket for real-time updates...');
-        this.socket = io();
+        this.socket = io({
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
+            timeout: 20000,
+            transports: ['websocket', 'polling']
+        });
         
         this.socket.on('connect', () => {
             console.log('🔗 Connected to WebSocket for real-time updates');
@@ -60,6 +66,16 @@ class VideoDetective {
             if (this.currentSessionId) {
                 this.socket.emit('join_session', { session_id: this.currentSessionId });
             }
+            
+            // If upload was in progress, show reconnection message
+            if (this.currentUploadId) {
+                this.showNotification('Upload connection restored - resuming...', 'info');
+            }
+        });
+        
+        this.socket.on('reconnect_error', () => {
+            console.log('❌ WebSocket reconnection failed');
+            this.showNotification('Connection failed - please refresh page', 'error');
         });
         
         // Analysis progress updates
@@ -340,12 +356,22 @@ class VideoDetective {
     }
     
     async uploadFileInChunks() {
-        // Upload file in chunks via WebSocket
-        const CHUNK_SIZE = 1024 * 1024; // 1MB chunks for optimal performance
+        // Upload file in chunks via WebSocket - Dynamic chunk size for 80GB GPU optimization
         const file = this.currentFile;
+        
+        // Dynamic chunk size based on file size for optimal performance
+        let CHUNK_SIZE;
+        if (file.size < 100 * 1024 * 1024) { // < 100MB
+            CHUNK_SIZE = 5 * 1024 * 1024;   // 5MB chunks
+        } else if (file.size < 500 * 1024 * 1024) { // < 500MB  
+            CHUNK_SIZE = 10 * 1024 * 1024;  // 10MB chunks
+        } else { // Large files (500MB+)
+            CHUNK_SIZE = 20 * 1024 * 1024;  // 20MB chunks for maximum speed
+        }
+        
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
         
-        console.log(`🚀 Starting chunked upload: ${totalChunks} chunks of ${CHUNK_SIZE / 1024}KB each`);
+        console.log(`🚀 Starting chunked upload: ${totalChunks} chunks of ${CHUNK_SIZE / (1024*1024)}MB each (file: ${(file.size / (1024*1024)).toFixed(1)}MB)`);
         
         for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
             const start = chunkIndex * CHUNK_SIZE;
@@ -365,9 +391,9 @@ class VideoDetective {
                     is_final: isLast
                 });
                 
-                // Small delay to prevent overwhelming the server
-                if (chunkIndex % 10 === 0) {
-                    await new Promise(resolve => setTimeout(resolve, 10));
+                // Minimal delay only for very large uploads to prevent overwhelming
+                if (totalChunks > 100 && chunkIndex % 10 === 0 && chunkIndex > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 2));
                 }
                 
             } catch (error) {
@@ -415,13 +441,16 @@ class VideoDetective {
                 <div id="uploadProgress" class="upload-progress">
                     <div class="progress-header">
                         <h3>📤 Uploading Video...</h3>
+                        <div id="percentageDisplay" class="percentage-display">0%</div>
                         <button id="cancelUploadBtn" class="cancel-btn">❌ Cancel</button>
                     </div>
                     <div class="progress-bar-container">
                         <div id="progressBar" class="progress-bar">
-                            <div id="progressFill" class="progress-fill"></div>
+                            <div id="progressFill" class="progress-fill">
+                                <div id="progressPercentage" class="progress-percentage">0%</div>
+                            </div>
                         </div>
-                        <div id="progressText" class="progress-text">0% (0 MB/s)</div>
+                        <div id="progressText" class="progress-text">0 MB/s</div>
                     </div>
                     <div id="uploadDetails" class="upload-details">
                         Preparing upload...
@@ -440,16 +469,38 @@ class VideoDetective {
     }
     
     updateUploadProgress(data) {
-        // Update upload progress display
+        // Update upload progress display with prominent percentage
         const progressFill = document.getElementById('progressFill');
         const progressText = document.getElementById('progressText');
         const uploadDetails = document.getElementById('uploadDetails');
+        const percentageDisplay = document.getElementById('percentageDisplay');
+        const progressPercentage = document.getElementById('progressPercentage');
         
-        if (progressFill && progressText && uploadDetails) {
-            progressFill.style.width = `${data.progress}%`;
-            progressText.textContent = `${data.progress.toFixed(1)}% (${data.upload_speed.toFixed(1)} MB/s)`;
+        const percentage = data.progress.toFixed(1);
+        
+        if (progressFill) {
+            progressFill.style.width = `${percentage}%`;
+        }
+        
+        if (percentageDisplay) {
+            percentageDisplay.textContent = `${percentage}%`;
+        }
+        
+        if (progressPercentage) {
+            progressPercentage.textContent = `${percentage}%`;
+            // Show percentage inside bar only when there's enough space (>10%)
+            progressPercentage.style.display = data.progress > 10 ? 'block' : 'none';
+        }
+        
+        if (progressText) {
+            progressText.textContent = `${data.upload_speed.toFixed(1)} MB/s`;
+        }
+        
+        if (uploadDetails) {
             uploadDetails.textContent = `${this.formatFileSize(data.bytes_received)} / ${this.formatFileSize(data.total_size)} • ${data.chunks_received} chunks received`;
         }
+        
+        console.log(`📊 Upload Progress: ${percentage}% (${data.upload_speed.toFixed(1)} MB/s)`);
     }
     
     hideUploadProgress() {
