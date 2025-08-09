@@ -12,6 +12,7 @@ from routes.main_routes import main_bp
 from routes.chat_routes import chat_bp
 from routes.api_routes import api_bp
 from services.session_service import cleanup_expired_sessions, cleanup_old_uploads
+from services.ai_service import initialize_model
 
 def create_app():
     """Create and configure the Flask application"""
@@ -61,5 +62,10 @@ if __name__ == '__main__':
     print(f"📁 Upload folder: {Config.UPLOAD_FOLDER}")
     print(f"🔗 Redis URL: {Config.REDIS_URL}")
     print(f"🤖 AI Model: Gemma 3 (Local Processing)")
+    
+    # Initialize model once at startup - MASSIVE SPEED BOOST!
+    print("🤖 Initializing Gemma 3 model...")
+    initialize_model()
+    print("✅ Model ready for real-time analysis!")
     
     app.run(host='0.0.0.0', port=8000, debug=True) 

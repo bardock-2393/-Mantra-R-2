@@ -114,9 +114,6 @@ def extract_video_frames(video_path, num_frames=16):
 async def analyze_video_with_gemini(video_path, analysis_type, user_focus):
     """Analyze video using Gemma 3 model with enhanced agentic capabilities"""
     try:
-        # Initialize model if not already loaded
-        initialize_model()
-        
         # Generate analysis prompt based on type and user focus
         analysis_prompt = generate_analysis_prompt(analysis_type, user_focus)
         
@@ -231,9 +228,6 @@ def generate_chat_response(analysis_result, analysis_type, user_focus, message, 
     try:
         # Clean up before chat
         cleanup_cache()
-        
-        # Initialize model if not already loaded
-        initialize_model()
         
         # Enhanced agentic conversation prompt with advanced capabilities
         context_prompt = f"""
