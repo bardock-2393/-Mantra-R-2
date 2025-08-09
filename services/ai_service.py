@@ -116,6 +116,10 @@ def extract_video_frames(video_path, num_frames=16):
 
 async def analyze_video_with_gemini(video_path, analysis_type, user_focus):
     """Analyze video using Gemma 3 model with enhanced agentic capabilities"""
+    import time
+    start_time = time.time()
+    print(f"🎬 Starting video analysis at {time.strftime('%H:%M:%S')}")
+    
     try:
         # Generate analysis prompt based on type and user focus
         analysis_prompt = generate_analysis_prompt(analysis_type, user_focus)
@@ -124,13 +128,15 @@ async def analyze_video_with_gemini(video_path, analysis_type, user_focus):
         cleanup_cache()
         
         # Extract frames from video (reduced for space efficiency)
+        frame_start = time.time()
         print('Extracting frames from video...')
         frames, timestamps, duration = extract_video_frames(video_path, num_frames=3)
+        frame_time = time.time() - frame_start
         
         if not frames:
             raise ValueError("No frames could be extracted from the video")
         
-        print(f'Extracted {len(frames)} frames from video (duration: {duration:.2f}s)')
+        print(f'✅ Extracted {len(frames)} frames in {frame_time:.2f}s (video duration: {duration:.2f}s)')
         
         # Enhanced agentic system prompt for superior analysis quality
         agent_system_prompt = f"""
@@ -202,6 +208,8 @@ You are analyzing a video with duration {duration:.2f} seconds. The frames provi
         input_len = inputs["input_ids"].shape[-1]
         
         # A100 optimized generation settings (reduced tokens to save space)
+        inference_start = time.time()
+        print('🧠 Starting AI inference...')
         with torch.inference_mode():
             generation = model.generate(
                 **inputs, 
@@ -214,12 +222,31 @@ You are analyzing a video with duration {duration:.2f} seconds. The frames provi
             )
             generation = generation[0][input_len:]
         
+        inference_time = time.time() - inference_start
+        print(f'✅ AI inference completed in {inference_time:.2f}s')
+        
         response_text = processor.decode(generation, skip_special_tokens=True)
+        
+        # Calculate total time and add timing info to response
+        total_time = time.time() - start_time
+        print(f'🏁 Total analysis completed in {total_time:.2f}s')
+        
+        # Add timing information to the response for UI display
+        timing_info = f"""
+
+---
+⏱️ **Performance Report:**
+- **Frame Extraction**: {frame_time:.2f}s
+- **AI Inference**: {inference_time:.2f}s  
+- **Total Time**: {total_time:.2f}s
+- **Speed**: {len(frames)/total_time:.1f} frames/sec
+- **GPU**: A100 Optimized ⚡
+"""
         
         # Clean up after generation
         cleanup_cache()
         
-        return response_text
+        return response_text + timing_info
         
     except Exception as e:
         print(f"Gemma 3 analysis error: {e}")
@@ -228,6 +255,10 @@ You are analyzing a video with duration {duration:.2f} seconds. The frames provi
 
 def generate_chat_response(analysis_result, analysis_type, user_focus, message, chat_history):
     """Generate contextual AI response based on video analysis using Gemma 3"""
+    import time
+    start_time = time.time()
+    print(f"💬 Starting chat response at {time.strftime('%H:%M:%S')}")
+    
     try:
         # Clean up before chat
         cleanup_cache()
@@ -344,10 +375,17 @@ Your mission is to provide **exceptional quality responses** that demonstrate de
         
         response_text = processor.decode(generation, skip_special_tokens=True)
         
+        # Calculate chat response time and add to response
+        chat_time = time.time() - start_time
+        print(f'💬 Chat response completed in {chat_time:.2f}s')
+        
+        # Add timing info for chat responses
+        timing_info = f"\n\n⚡ *Response generated in {chat_time:.2f}s*"
+        
         # Clean up after chat
         cleanup_cache()
         
-        return response_text
+        return response_text + timing_info
         
     except Exception as e:
         print(f"Gemma 3 chat error: {e}")

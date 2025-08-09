@@ -64,8 +64,11 @@ if __name__ == '__main__':
     print(f"🤖 AI Model: Gemma 3 (Local Processing)")
     
     # Initialize model once at startup - MASSIVE SPEED BOOST!
+    import time
+    model_start = time.time()
     print("🤖 Initializing Gemma 3 model...")
     initialize_model()
-    print("✅ Model ready for real-time analysis!")
+    model_time = time.time() - model_start
+    print(f"✅ Model ready for real-time analysis! (loaded in {model_time:.2f}s)")
     
     app.run(host='0.0.0.0', port=8000, debug=True) 
