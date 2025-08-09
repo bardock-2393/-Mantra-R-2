@@ -69,13 +69,18 @@ def initialize_model():
         cleanup_cache()
         
         try:
-            # A100 optimized settings without compilation
+            # 80GB GPU optimized settings for maximum performance
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
             torch.set_float32_matmul_precision('high')
-            # Maximum A100 speed optimizations
+            # Maximum speed optimizations for 80GB GPU
             torch.backends.cudnn.benchmark = True
             torch.backends.cudnn.deterministic = False
+            
+            # 80GB GPU specific optimizations
+            if Config.HIGH_MEMORY_MODE:
+                torch.cuda.set_per_process_memory_fraction(0.8)  # Use 80% of 80GB
+                print(f"🚀 80GB GPU Mode: Using up to {Config.GPU_MEMORY_GB * 0.8:.1f}GB GPU memory")
             
             # Use low_cpu_mem_usage to reduce memory pressure
             model = Gemma3ForConditionalGeneration.from_pretrained(
@@ -125,14 +130,19 @@ def extract_video_frames(video_path, num_frames=None) -> Tuple[List[Image.Image]
     fps = cap.get(cv2.CAP_PROP_FPS)
     duration = frame_count / fps if fps > 0 else 0
     
-    # Auto-determine frame count based on video length
+    # Auto-determine frame count based on video length - 80GB GPU Optimized
     if num_frames is None:
         if duration >= Config.LONG_VIDEO_THRESHOLD:  # 1+ hour videos
             num_frames = Config.MAX_FRAMES_LONG_VIDEO
-            print(f"🎬 Long video detected ({duration/60:.1f} minutes) - using smart sampling with {num_frames} frames")
+            print(f"🎬 Long video detected ({duration/60:.1f} minutes) - using 80GB GPU optimized sampling with {num_frames} frames")
         else:
             num_frames = Config.MAX_FRAMES_SHORT_VIDEO
-            print(f"🎬 Short video ({duration/60:.1f} minutes) - using regular sampling with {num_frames} frames")
+            print(f"🎬 Short video ({duration/60:.1f} minutes) - using 80GB GPU optimized sampling with {num_frames} frames")
+    
+    # 80GB GPU can handle more aggressive processing
+    if Config.HIGH_MEMORY_MODE and duration < 300:  # Under 5 minutes
+        num_frames = min(num_frames + 2, 8)  # Boost frames for short videos
+        print(f"🚀 80GB GPU Boost: Increased to {num_frames} frames for better quality")
     
     # Smart sampling strategy for different video lengths
     if duration >= Config.LONG_VIDEO_THRESHOLD:  # Long videos (1+ hours)
@@ -194,9 +204,15 @@ def extract_video_frames(video_path, num_frames=None) -> Tuple[List[Image.Image]
     except Exception as e:
         print(f"⚠️ Cache storage failed: {e}")
     
-    # Memory optimization for long videos
+    # Memory optimization for long videos - 80GB GPU optimized
     if duration >= Config.LONG_VIDEO_THRESHOLD:
-        torch.cuda.empty_cache()  # Clear GPU memory after processing
+        if Config.HIGH_MEMORY_MODE:
+            # With 80GB GPU, we can be less aggressive with cache clearing
+            if torch.cuda.memory_allocated() > (Config.GPU_MEMORY_GB * 0.6 * 1e9):
+                torch.cuda.empty_cache()
+                print("🗄️ 80GB GPU: Smart cache management - cleared cache")
+        else:
+            torch.cuda.empty_cache()  # Clear GPU memory after processing
     
     return frames, timestamps, duration
 
@@ -362,18 +378,24 @@ Provide **detailed, comprehensive analysis** for optimal user experience.
             ws_service.emit_ai_thinking(session_id, 'ai_inference')
             ws_service.emit_progress(session_id, 'ai_inference', 75, '🧠 Gemma 3 AI analyzing video content...')
         
-        # A100 optimized generation settings (reduced tokens to save space)
+        # EXTREME SPEED optimization for sub-1000ms target
         inference_start = time.time()
-        print('🧠 Starting AI inference...')
+        print('🧠 Starting ULTRA-FAST AI inference...')
         with torch.inference_mode():
             generation = model.generate(
                 **inputs, 
-                max_new_tokens=Config.MAX_OUTPUT_TOKENS,  # Use direct config value for speed
-                temperature=Config.TEMPERATURE,
-                top_p=Config.TOP_P,
-                do_sample=True if Config.TEMPERATURE > 0 else False,
+                max_new_tokens=Config.MAX_OUTPUT_TOKENS,  # Minimal tokens
+                temperature=Config.TEMPERATURE,  # Greedy (fastest)
+                top_k=Config.TOP_K,  # Greedy selection
+                do_sample=False,  # Greedy decoding (fastest)
                 use_cache=True,  # Enable KV cache for speed
-                pad_token_id=processor.tokenizer.eos_token_id
+                pad_token_id=processor.tokenizer.eos_token_id,
+                # Additional speed optimizations
+                early_stopping=True,
+                num_beams=1,  # No beam search for speed
+                output_attentions=False,
+                output_hidden_states=False,
+                return_dict_in_generate=False
             )
             generation = generation[0][input_len:]
         
@@ -567,10 +589,18 @@ Your mission is to provide **exceptional quality responses** that demonstrate de
         with torch.inference_mode():
             generation = model.generate(
                 **inputs, 
-                max_new_tokens=Config.CHAT_MAX_TOKENS,
-                temperature=Config.CHAT_TEMPERATURE,
-                top_p=Config.TOP_P,
-                do_sample=True if Config.CHAT_TEMPERATURE > 0 else False
+                max_new_tokens=Config.CHAT_MAX_TOKENS,  # Minimal tokens
+                temperature=Config.CHAT_TEMPERATURE,  # Greedy
+                top_k=Config.TOP_K,  # Greedy selection
+                do_sample=False,  # Greedy decoding (fastest)
+                use_cache=True,  # KV cache
+                pad_token_id=processor.tokenizer.eos_token_id,
+                # Speed optimizations for chat
+                early_stopping=True,
+                num_beams=1,
+                output_attentions=False,
+                output_hidden_states=False,
+                return_dict_in_generate=False
             )
             generation = generation[0][input_len:]
         

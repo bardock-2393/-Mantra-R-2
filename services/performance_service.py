@@ -196,13 +196,14 @@ class CacheManager:
         return f"cache:{hashlib.md5(key_data.encode()).hexdigest()}"
     
     def get(self, key: str):
-        """Get cached result"""
+        """Get cached result with numpy array restoration"""
         # Try Redis first
         if self.redis_client:
             try:
                 cached = self.redis_client.get(key)
                 if cached:
-                    return json.loads(cached)
+                    deserialized = json.loads(cached)
+                    return self._restore_from_serializable(deserialized)
             except Exception as e:
                 print(f"⚠️ Redis cache get failed: {e}")
         
@@ -210,18 +211,57 @@ class CacheManager:
         return self.local_cache.get(key)
     
     def set(self, key: str, value, ttl: int = None):
-        """Set cached result"""
+        """Set cached result with numpy array handling"""
         ttl = ttl or self.cache_ttl
+        
+        # Handle numpy arrays in the value
+        try:
+            serializable_value = self._make_serializable(value)
+        except Exception as e:
+            print(f"⚠️ Cache serialization failed: {e}")
+            return
         
         # Store in Redis
         if self.redis_client:
             try:
-                self.redis_client.setex(key, ttl, json.dumps(value))
+                self.redis_client.setex(key, ttl, json.dumps(serializable_value))
             except Exception as e:
                 print(f"⚠️ Redis cache set failed: {e}")
         
         # Store in local cache as backup
         self.local_cache[key] = value
+    
+    def _make_serializable(self, obj):
+        """Convert numpy arrays and other non-serializable objects"""
+        import numpy as np
+        
+        if isinstance(obj, dict):
+            return {k: self._make_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_serializable(item) for item in obj]
+        elif isinstance(obj, np.ndarray):
+            return {
+                '_numpy_array': True,
+                'data': obj.tolist(),
+                'dtype': str(obj.dtype),
+                'shape': obj.shape
+            }
+        else:
+            return obj
+    
+    def _restore_from_serializable(self, obj):
+        """Restore numpy arrays and other objects"""
+        import numpy as np
+        
+        if isinstance(obj, dict):
+            if obj.get('_numpy_array'):
+                return np.array(obj['data'], dtype=obj['dtype']).reshape(obj['shape'])
+            else:
+                return {k: self._restore_from_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._restore_from_serializable(item) for item in obj]
+        else:
+            return obj
         
         # Prevent local cache from growing too large
         if len(self.local_cache) > 100:
