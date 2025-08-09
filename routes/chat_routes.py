@@ -55,9 +55,9 @@ def chat():
         
         print(f"Debug: Chat - Analysis result length: {len(analysis_result) if analysis_result else 0}")
         
-        # Generate contextual AI response based on video analysis
+        # Generate contextual AI response with real-time WebSocket updates
         if analysis_result:
-            ai_response = generate_chat_response(analysis_result, analysis_type, user_focus, message, chat_list)
+            ai_response = generate_chat_response(analysis_result, analysis_type, user_focus, message, chat_list, session_id)
         else:
             # No analysis available yet
             ai_response = f"I don't have the video analysis results yet. Please first analyze the uploaded video, then I can help you with: {message}. Click 'Start Analysis' to begin the video analysis."

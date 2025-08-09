@@ -1086,4 +1086,162 @@ body {
     .input-container {
         padding: 0.75rem;
     }
+}
+
+/* Real-time WebSocket Progress Indicators */
+.progress-container {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #007bff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+}
+
+.progress-header {
+    margin-bottom: 10px;
+    font-weight: 500;
+    color: #495057;
+}
+
+.progress-bar-container {
+    width: 100%;
+    height: 6px;
+    background: #e9ecef;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 10px;
+}
+
+.progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #007bff, #0056b3);
+    transition: width 0.3s ease;
+    border-radius: 3px;
+    position: relative;
+}
+
+/* Stage-specific progress bar colors */
+.progress-initialization { 
+    background: linear-gradient(90deg, #6c757d, #495057); 
+}
+
+.progress-frame_extraction { 
+    background: linear-gradient(90deg, #28a745, #1e7e34); 
+}
+
+.progress-ai_inference { 
+    background: linear-gradient(90deg, #ffc107, #e0a800); 
+}
+
+.progress-complete { 
+    background: linear-gradient(90deg, #28a745, #1e7e34); 
+}
+
+/* AI Thinking Indicator */
+.ai-thinking {
+    padding: 10px 15px;
+    background: #fff3cd;
+    color: #856404;
+    border-radius: 6px;
+    margin: 10px 0;
+    border-left: 4px solid #ffc107;
+    animation: pulse 1.5s infinite;
+    font-weight: 500;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* Real-time Notifications */
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 6px;
+    color: white;
+    z-index: 1000;
+    animation: slideIn 0.3s ease;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    max-width: 350px;
+}
+
+.notification.success { 
+    background: #28a745; 
+}
+
+.notification.error { 
+    background: #dc3545; 
+}
+
+.notification.warning { 
+    background: #ffc107; 
+    color: #212529; 
+}
+
+.notification.info { 
+    background: #17a2b8; 
+}
+
+@keyframes slideIn {
+    from { 
+        transform: translateX(100%); 
+        opacity: 0;
+    }
+    to { 
+        transform: translateX(0); 
+        opacity: 1;
+    }
+}
+
+/* WebSocket connection indicator */
+.connection-status {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    padding: 8px 12px;
+    background: #28a745;
+    color: white;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.connection-status.disconnected {
+    background: #dc3545;
+}
+
+.connection-status::before {
+    content: '●';
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0.3; }
+}
+
+/* Progress bar animation for long videos */
+.progress-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
 } 

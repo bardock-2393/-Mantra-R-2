@@ -1,21 +1,88 @@
-// AI Video Detective - Professional JavaScript Application
+// AI Video Detective - Professional JavaScript Application with Real-time WebSocket Support
 
 class VideoDetective {
     constructor() {
         this.currentFile = null;
         this.analysisComplete = false;
         this.isTyping = false;
+        this.socket = null;
+        this.currentSessionId = null;
         this.init();
     }
 
     init() {
-        console.log('🚀 Initializing AI Video Detective Pro...');
+        console.log('🚀 Initializing AI Video Detective Pro with Real-time WebSocket Support...');
+        this.initializeWebSocket();
         this.setupEventListeners();
         this.setupAutoResize();
         this.checkSessionStatus();
         this.setupPageCleanup();
         this.showDemoVideoPreview();
-        console.log('✅ AI Video Detective Pro initialized successfully!');
+        console.log('✅ AI Video Detective Pro initialized with real-time capabilities!');
+    }
+
+    // WebSocket initialization for real-time communication
+    initializeWebSocket() {
+        if (this.socket) {
+            this.socket.disconnect();
+        }
+        
+        console.log('🔗 Connecting to WebSocket for real-time updates...');
+        this.socket = io();
+        
+        this.socket.on('connect', () => {
+            console.log('🔗 Connected to WebSocket for real-time updates');
+            this.showNotification('Real-time connection established', 'success');
+            
+            // Join session if we have one
+            if (this.currentSessionId) {
+                this.socket.emit('join_session', { session_id: this.currentSessionId });
+            }
+        });
+        
+        this.socket.on('disconnect', () => {
+            console.log('🔌 Disconnected from WebSocket');
+            this.showNotification('Real-time connection lost', 'warning');
+        });
+        
+        // Analysis progress updates
+        this.socket.on('analysis_progress', (data) => {
+            this.updateAnalysisProgress(data.stage, data.progress, data.message);
+        });
+        
+        // Long video detection
+        this.socket.on('long_video_detected', (data) => {
+            this.showNotification(`Long video detected (${data.duration_minutes.toFixed(1)} minutes) - Using smart sampling!`, 'info');
+        });
+        
+        // AI thinking indicator
+        this.socket.on('ai_thinking', (data) => {
+            this.showAIThinking(data.message);
+        });
+        
+        // Analysis completion
+        this.socket.on('analysis_complete', (data) => {
+            this.hideAnalysisProgress();
+            this.hideAIThinking();
+            this.handleAnalysisComplete(data.result, data.timing);
+        });
+        
+        // Chat response (real-time streaming)
+        this.socket.on('chat_response', (data) => {
+            this.handleChatResponse(data.response, data.timing);
+        });
+        
+        // Error handling
+        this.socket.on('error', (data) => {
+            this.hideAnalysisProgress();
+            this.hideAIThinking();
+            this.showNotification(`Error: ${data.error}`, 'error');
+        });
+        
+        // Session joined confirmation
+        this.socket.on('session_joined', (data) => {
+            console.log(`📡 Joined session: ${data.session_id} for real-time updates`);
+        });
     }
 
     setupEventListeners() {
@@ -757,6 +824,11 @@ class VideoDetective {
             const result = await response.json();
             
             if (result.active) {
+                // Update session ID for WebSocket
+                if (result.session_id && result.session_id !== this.currentSessionId) {
+                    this.updateSessionId(result.session_id);
+                }
+                
                 if (result.video_uploaded || result.evidence_count > 0) {
                     this.showCleanupButton();
                 } else {
@@ -968,6 +1040,109 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
+
+// Real-time WebSocket helper methods for VideoDetective class
+VideoDetective.prototype.updateAnalysisProgress = function(stage, progress, message) {
+    let progressContainer = document.getElementById('analysis-progress');
+    if (!progressContainer) {
+        this.createProgressContainer();
+        progressContainer = document.getElementById('analysis-progress');
+    }
+    
+    const progressBar = document.getElementById('analysis-progress-bar');
+    const progressText = document.getElementById('analysis-progress-text');
+    
+    if (progressContainer && progressBar && progressText) {
+        progressContainer.style.display = 'block';
+        progressBar.style.width = `${progress}%`;
+        progressText.textContent = message;
+        progressBar.className = `progress-bar progress-${stage}`;
+        console.log(`📊 Progress: ${stage} - ${progress}% - ${message}`);
+    }
+};
+
+VideoDetective.prototype.createProgressContainer = function() {
+    const chatInterface = document.getElementById('chatInterface');
+    if (chatInterface && !document.getElementById('analysis-progress')) {
+        const progressHTML = `
+            <div id="analysis-progress" class="progress-container" style="display: none;">
+                <div class="progress-header">
+                    <span id="analysis-progress-text">Starting analysis...</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div id="analysis-progress-bar" class="progress-bar"></div>
+                </div>
+            </div>`;
+        
+        const resultArea = document.getElementById('resultArea');
+        if (resultArea) {
+            resultArea.insertAdjacentHTML('beforebegin', progressHTML);
+        }
+    }
+};
+
+VideoDetective.prototype.showAIThinking = function(message) {
+    let thinkingDiv = document.getElementById('ai-thinking');
+    if (!thinkingDiv) {
+        const chatInterface = document.getElementById('chatInterface');
+        if (chatInterface) {
+            const thinkingHTML = `<div id="ai-thinking" class="ai-thinking" style="display: none;">🧠 AI is thinking...</div>`;
+            const resultArea = document.getElementById('resultArea');
+            if (resultArea) {
+                resultArea.insertAdjacentHTML('beforebegin', thinkingHTML);
+                thinkingDiv = document.getElementById('ai-thinking');
+            }
+        }
+    }
+    
+    if (thinkingDiv) {
+        thinkingDiv.style.display = 'block';
+        thinkingDiv.textContent = message;
+    }
+};
+
+VideoDetective.prototype.hideAIThinking = function() {
+    const thinkingDiv = document.getElementById('ai-thinking');
+    if (thinkingDiv) {
+        thinkingDiv.style.display = 'none';
+    }
+};
+
+VideoDetective.prototype.hideAnalysisProgress = function() {
+    const progressContainer = document.getElementById('analysis-progress');
+    if (progressContainer) {
+        progressContainer.style.display = 'none';
+    }
+};
+
+VideoDetective.prototype.showNotification = function(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    notification.style.cssText = `
+        position: fixed; top: 20px; right: 20px; padding: 12px 20px; 
+        border-radius: 6px; color: white; z-index: 1000; 
+        animation: slideIn 0.3s ease;
+        ${type === 'success' ? 'background: #28a745;' : ''}
+        ${type === 'error' ? 'background: #dc3545;' : ''}
+        ${type === 'warning' ? 'background: #ffc107; color: #212529;' : ''}
+        ${type === 'info' ? 'background: #17a2b8;' : ''}
+    `;
+    
+    document.body.appendChild(notification);
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 4000);
+};
+
+VideoDetective.prototype.updateSessionId = function(sessionId) {
+    this.currentSessionId = sessionId;
+    if (this.socket && this.socket.connected) {
+        this.socket.emit('join_session', { session_id: sessionId });
+    }
+};
 
 // Initialize the application
 window.videoDetective = new VideoDetective();

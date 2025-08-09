@@ -153,9 +153,9 @@ def analyze_video():
         if not os.path.exists(video_path):
             return jsonify({'success': False, 'error': 'Video file not found'})
         
-        # Perform analysis
+        # Perform analysis with real-time WebSocket updates
         import asyncio
-        analysis_result = asyncio.run(analyze_video_with_gemini(video_path, analysis_type, user_focus))
+        analysis_result = asyncio.run(analyze_video_with_gemini(video_path, analysis_type, user_focus, session_id))
         
         # Extract timestamps and capture screenshots automatically
         timestamps = extract_timestamps_from_text(analysis_result)

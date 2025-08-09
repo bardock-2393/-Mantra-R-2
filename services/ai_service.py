@@ -14,6 +14,15 @@ import shutil
 from config import Config
 from analysis_templates import generate_analysis_prompt
 
+# Import WebSocket service for real-time updates (avoiding circular import)
+def get_websocket_service():
+    """Get WebSocket service with delayed import to avoid circular dependency"""
+    try:
+        from services.websocket_service import get_websocket_service
+        return get_websocket_service()
+    except ImportError:
+        return None
+
 # Disable compilation to save disk space
 os.environ['TORCHDYNAMO_DISABLE'] = '1'
 os.environ['TORCH_COMPILE_DISABLE'] = '1'
@@ -154,15 +163,22 @@ def extract_video_frames(video_path, num_frames=None):
     
     return frames, timestamps, duration
 
-async def analyze_video_with_gemini(video_path, analysis_type, user_focus):
-    """Analyze video using Gemma 3 model with enhanced agentic capabilities"""
+async def analyze_video_with_gemini(video_path, analysis_type, user_focus, session_id=None):
+    """Analyze video using Gemma 3 model with real-time WebSocket updates"""
     import time
     start_time = time.time()
     print(f"🎬 Starting video analysis at {time.strftime('%H:%M:%S')}")
     
+    # Get WebSocket service for real-time updates
+    ws_service = get_websocket_service()
+    
     try:
         # Generate analysis prompt based on type and user focus
         analysis_prompt = generate_analysis_prompt(analysis_type, user_focus)
+        
+        # Emit progress: Starting analysis
+        if ws_service and session_id:
+            ws_service.emit_progress(session_id, 'initialization', 10, '🚀 Starting video analysis...')
         
         # Clean up before analysis
         cleanup_cache()
@@ -170,6 +186,10 @@ async def analyze_video_with_gemini(video_path, analysis_type, user_focus):
         # Extract frames from video with smart sampling
         frame_start = time.time()
         print('🎬 Extracting frames from video...')
+        
+        if ws_service and session_id:
+            ws_service.emit_progress(session_id, 'frame_extraction', 25, '🎬 Extracting frames from video...')
+        
         frames, timestamps, duration = extract_video_frames(video_path)  # Auto-detects long videos
         frame_time = time.time() - frame_start
         
@@ -178,8 +198,16 @@ async def analyze_video_with_gemini(video_path, analysis_type, user_focus):
         
         print(f'✅ Extracted {len(frames)} frames in {frame_time:.2f}s (video duration: {duration:.2f}s)')
         
+        # Emit progress: Frames extracted
+        if ws_service and session_id:
+            ws_service.emit_progress(session_id, 'frame_extraction', 50, f'✅ Extracted {len(frames)} frames ({duration/60:.1f} min video)')
+        
         # Adaptive system prompt based on video length
         is_long_video = duration >= Config.LONG_VIDEO_THRESHOLD
+        
+        # Notify about long video detection
+        if ws_service and session_id and is_long_video:
+            ws_service.emit_long_video_detected(session_id, duration/60)
         video_type = "long-form" if is_long_video else "short-form"
         
         if is_long_video:
@@ -277,6 +305,11 @@ Provide **detailed, comprehensive analysis** for optimal user experience.
         
         input_len = inputs["input_ids"].shape[-1]
         
+        # Emit progress: AI thinking
+        if ws_service and session_id:
+            ws_service.emit_ai_thinking(session_id, 'ai_inference')
+            ws_service.emit_progress(session_id, 'ai_inference', 75, '🧠 Gemma 3 AI analyzing video content...')
+        
         # A100 optimized generation settings (reduced tokens to save space)
         inference_start = time.time()
         print('🧠 Starting AI inference...')
@@ -316,6 +349,18 @@ Provide **detailed, comprehensive analysis** for optimal user experience.
 - **GPU**: A100 Optimized ⚡
 """
         
+        # Emit completion with results
+        if ws_service and session_id:
+            timing_info_dict = {
+                'frame_time': frame_time,
+                'inference_time': inference_time,
+                'total_time': total_time,
+                'speed': len(frames)/total_time,
+                'mode': 'Long Video (Smart Sampling)' if is_long_video else 'Short Video (Full Analysis)'
+            }
+            ws_service.emit_analysis_complete(session_id, response_text + timing_info, timing_info_dict)
+            ws_service.emit_progress(session_id, 'complete', 100, f'✅ Analysis complete in {total_time:.2f}s!')
+        
         # Enhanced cleanup for long videos
         cleanup_cache()
         if is_long_video:
@@ -326,14 +371,19 @@ Provide **detailed, comprehensive analysis** for optimal user experience.
         
     except Exception as e:
         print(f"Gemma 3 analysis error: {e}")
+        if ws_service and session_id:
+            ws_service.emit_error(session_id, str(e), 'analysis')
         cleanup_cache()  # Clean up on error too
         return f"Error analyzing video: {str(e)}"
 
-def generate_chat_response(analysis_result, analysis_type, user_focus, message, chat_history):
-    """Generate contextual AI response based on video analysis using Gemma 3"""
+def generate_chat_response(analysis_result, analysis_type, user_focus, message, chat_history, session_id=None):
+    """Generate contextual AI response with real-time WebSocket updates"""
     import time
     start_time = time.time()
     print(f"💬 Starting chat response at {time.strftime('%H:%M:%S')}")
+    
+    # Get WebSocket service for real-time updates
+    ws_service = get_websocket_service()
     
     try:
         # Clean up before chat
@@ -352,7 +402,7 @@ You are an advanced AI video analysis agent with comprehensive understanding cap
 - Conversation History: Available for context awareness
 
 ### Video Analysis Context:
-{analysis_result}
+            {analysis_result}
             
 ### Agent Capabilities:
 - Autonomous Analysis: Provide comprehensive insights beyond the immediate question
